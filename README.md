@@ -15,7 +15,7 @@ curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh
 With server pre-configured:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server hanger
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server volumio
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ After installation, run:
 ~/peppy_remote/peppy_remote
 
 # Connect to specific server
-~/peppy_remote/peppy_remote --server hanger
+~/peppy_remote/peppy_remote --server volumio
 ~/peppy_remote/peppy_remote --server 192.168.1.100
 
 # Simple test display (VU bars only, no full PeppyMeter)
@@ -174,12 +174,12 @@ System packages are NOT removed (python3, SDL2, etc.).
 **No servers found:**
 - Check that PeppyMeter is running on Volumio
 - Check that "Remote Display Server" is enabled
-- Verify network connectivity: `ping hanger.local`
+- Verify network connectivity: `ping volumio.local`
 - Try manual server: `peppy_remote --server <ip_address>`
 
 **SMB mount fails (templates):**
 - Ensure cifs-utils is installed
-- Check Volumio SMB is accessible: `smbclient -L //hanger.local -N`
+- Check Volumio SMB is accessible: `smbclient -L //volumio.local -N`
 - Verify sudoers entry exists: `cat /etc/sudoers.d/peppy_remote`
 - Note: Config is fetched via HTTP, only templates use SMB
 

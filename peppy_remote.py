@@ -22,7 +22,7 @@ Installation:
 
 Usage:
     peppy_remote                    # Auto-discover server
-    peppy_remote --server hanger    # Connect to specific server
+    peppy_remote --server volumio   # Connect to specific server
     peppy_remote --test             # Simple test display
 """
 
@@ -211,7 +211,7 @@ def run_config_wizard():
         print()
         print("Server host:")
         print("  1. Auto-discover (recommended)")
-        print("  2. Enter hostname (e.g., volumio, hanger)")
+        print("  2. Enter hostname (e.g., volumio)")
         print("  3. Enter IP address")
         print()
         choice = input("Choice [1]: ").strip() or "1"

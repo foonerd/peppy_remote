@@ -6,7 +6,7 @@
 #   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash
 #
 # Or with server pre-configured:
-#   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server hanger
+#   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server volumio
 #
 # This installs PeppyMeter Remote Client to ~/peppy_remote/
 # Everything is self-contained in that folder.
@@ -501,7 +501,7 @@ echo ""
 echo "To run PeppyMeter Remote Client:"
 echo ""
 echo "  $INSTALL_DIR/peppy_remote                    # Auto-discover server"
-echo "  $INSTALL_DIR/peppy_remote --server hanger    # Connect to specific server"
+echo "  $INSTALL_DIR/peppy_remote --server volumio   # Connect to specific server"
 echo "  $INSTALL_DIR/peppy_remote --config           # Interactive configuration"
 echo "  $INSTALL_DIR/peppy_remote --test             # Simple test display"
 echo ""
