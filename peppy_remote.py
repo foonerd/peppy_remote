@@ -77,6 +77,7 @@ DEFAULT_CONFIG = {
     "server": {
         "host": None,           # None = auto-discover
         "level_port": 5580,
+        "spectrum_port": 5581,
         "volumio_port": 3000,
         "discovery_port": 5579,
         "discovery_timeout": 10
@@ -171,8 +172,9 @@ def run_config_wizard():
         print("Server Settings:")
         print(f"  1. Server host:       {host}")
         print(f"  2. Level port:        {config['server']['level_port']}")
-        print(f"  3. Volumio port:      {config['server']['volumio_port']}")
-        print(f"  4. Discovery timeout: {config['server']['discovery_timeout']}s")
+        print(f"  3. Spectrum port:     {config['server']['spectrum_port']}")
+        print(f"  4. Volumio port:      {config['server']['volumio_port']}")
+        print(f"  5. Discovery timeout: {config['server']['discovery_timeout']}s")
         print()
         
         # Display settings
@@ -180,17 +182,17 @@ def run_config_wizard():
         pos = config["display"]["position"]
         pos_str = f"{pos[0]}, {pos[1]}" if pos else "centered"
         print("Display Settings:")
-        print(f"  5. Window mode:       {mode}")
-        print(f"  6. Position:          {pos_str}")
-        print(f"  7. Monitor:           {config['display']['monitor']}")
+        print(f"  6. Window mode:       {mode}")
+        print(f"  7. Position:          {pos_str}")
+        print(f"  8. Monitor:           {config['display']['monitor']}")
         print()
         
         # Template settings
         smb = "yes" if config["templates"]["use_smb"] else "no"
         local = config["templates"]["local_path"] or "(none)"
         print("Template Settings:")
-        print(f"  8. Use SMB mount:     {smb}")
-        print(f"  9. Local path:        {local}")
+        print(f"  9. Use SMB mount:     {smb}")
+        print(f"  10. Local path:       {local}")
         print()
         
         print("-" * 50)
@@ -301,26 +303,28 @@ def run_config_wizard():
         elif choice == "2":
             config_port("level_port", "Level port")
         elif choice == "3":
-            config_port("volumio_port", "Volumio port")
+            config_port("spectrum_port", "Spectrum port")
         elif choice == "4":
+            config_port("volumio_port", "Volumio port")
+        elif choice == "5":
             try:
                 value = int(get_input("Discovery timeout (seconds)", config["server"]["discovery_timeout"]))
                 config["server"]["discovery_timeout"] = value
             except ValueError:
                 print("Invalid number")
-        elif choice == "5":
-            config_window_mode()
         elif choice == "6":
-            config_position()
+            config_window_mode()
         elif choice == "7":
+            config_position()
+        elif choice == "8":
             try:
                 value = int(get_input("Monitor number", config["display"]["monitor"]))
                 config["display"]["monitor"] = value
             except ValueError:
                 print("Invalid number")
-        elif choice == "8":
-            config_smb()
         elif choice == "9":
+            config_smb()
+        elif choice == "10":
             path = input("Local templates path (empty to clear): ").strip()
             config["templates"]["local_path"] = path if path else None
         elif choice == "S":
@@ -383,6 +387,7 @@ class ServerDiscovery:
                                 'ip': ip,
                                 'hostname': hostname,
                                 'level_port': info.get('level_port', 5580),
+                                'spectrum_port': info.get('spectrum_port', 5581),
                                 'volumio_port': info.get('volumio_port', 3000),
                                 'version': info.get('version', 1),
                                 'config_version': info.get('config_version', '')
@@ -688,6 +693,115 @@ class LevelReceiver:
 
 
 # =============================================================================
+# Spectrum Data Receiver
+# =============================================================================
+class SpectrumReceiver:
+    """
+    Receives spectrum analyzer (FFT) data over UDP.
+    
+    Packet format (variable size, little-endian):
+        - seq (uint32): Sequence number for loss detection
+        - size (uint16): Number of frequency bins
+        - bins (float32 * size): Frequency bin values (0-100)
+    """
+    
+    def __init__(self, server_ip, port=5581):
+        self.server_ip = server_ip
+        self.port = port
+        self.sock = None
+        self._running = False
+        self._thread = None
+        
+        # Current spectrum data (thread-safe via GIL for simple reads)
+        self.seq = 0
+        self.size = 0
+        self.bins = []  # List of frequency bin values
+        self.last_update = 0
+        self._first_packet_logged = False
+    
+    def start(self):
+        """Start receiving spectrum data in background thread."""
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.settimeout(1.0)
+        self.sock.bind(('', self.port))
+        
+        self._running = True
+        self._thread = threading.Thread(target=self._receive_loop, daemon=True)
+        self._thread.start()
+        print(f"Spectrum receiver started on UDP port {self.port}")
+    
+    def _receive_loop(self):
+        """Background thread to receive spectrum data."""
+        while self._running:
+            try:
+                data, addr = self.sock.recvfrom(1024)
+                if len(data) >= 6:  # Minimum: uint32 + uint16
+                    # Unpack header
+                    seq, size = struct.unpack('<IH', data[:6])
+                    expected_len = 6 + (size * 4)  # header + bins (float32 each)
+                    
+                    if len(data) >= expected_len:
+                        # Unpack bins
+                        fmt = '<' + str(size) + 'f'
+                        bins = list(struct.unpack(fmt, data[6:expected_len]))
+                        
+                        self.seq = seq
+                        self.size = size
+                        self.bins = bins
+                        self.last_update = time.time()
+                        
+                        # Log first successful packet
+                        if not self._first_packet_logged:
+                            print(f"Spectrum receiver: first packet - {size} bins")
+                            self._first_packet_logged = True
+                            
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self._running:
+                    print(f"Spectrum receiver error: {e}")
+                break
+    
+    def stop(self):
+        """Stop receiving."""
+        self._running = False
+        if self.sock:
+            self.sock.close()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+    
+    def get_data(self):
+        """
+        Get current spectrum data in the format PeppySpectrum expects.
+        
+        Returns raw bytes matching the pipe format (int32 per bin, little-endian).
+        """
+        if not self.bins:
+            return None
+        
+        # Convert float bins back to int32 bytes (same format as pipe)
+        result = bytearray()
+        for val in self.bins:
+            int_val = int(val) & 0xFFFFFFFF
+            result.extend([
+                int_val & 0xFF,
+                (int_val >> 8) & 0xFF,
+                (int_val >> 16) & 0xFF,
+                (int_val >> 24) & 0xFF
+            ])
+        return bytes(result)
+    
+    def get_bins(self):
+        """Get current spectrum bins as list of floats."""
+        return self.bins.copy() if self.bins else []
+    
+    def has_data(self):
+        """Check if we've received any spectrum data."""
+        return self.last_update > 0
+
+
+# =============================================================================
 # Remote Data Source (for PeppyMeter integration)
 # =============================================================================
 class RemoteDataSource:
@@ -723,6 +837,255 @@ class RemoteDataSource:
     
     def get_current_mono_channel_data(self):
         return self.level_receiver.mono
+
+
+# =============================================================================
+# Remote Spectrum Output (for remote spectrum visualization)
+# =============================================================================
+class RemoteSpectrumOutput:
+    """
+    A SpectrumOutput replacement that uses network data instead of pipe.
+    
+    This class initializes the Spectrum visual components normally but
+    bypasses the pipe-reading data source, instead receiving bar heights
+    from the SpectrumReceiver and injecting them directly.
+    """
+    
+    def __init__(self, util, meter_config_volumio, screensaver_path, spectrum_receiver):
+        """Initialize remote spectrum output.
+        
+        :param util: PeppyMeter utility class
+        :param meter_config_volumio: Volumio meter configuration
+        :param screensaver_path: Path to screensaver directory (contains 'spectrum' subfolder)
+        :param spectrum_receiver: SpectrumReceiver instance for network data
+        """
+        self.util = util
+        self.meter_config_volumio = meter_config_volumio
+        self.screensaver_path = screensaver_path
+        self.spectrum_receiver = spectrum_receiver
+        self.sp = None
+        self._initialized = False
+        self._fade_in_done = False
+        self._fade_factor = 0.0
+        self._smooth_bins = None  # For smoothing transitions
+        
+        # Get spectrum config from meter section
+        from volumio_configfileparser import SPECTRUM, SPECTRUM_SIZE, SPECTRUM_POS
+        from configfileparser import METER
+        
+        meter_config = util.meter_config
+        meter_section = meter_config_volumio[meter_config[METER]]
+        
+        self.w = meter_section[SPECTRUM_SIZE][0]
+        self.h = meter_section[SPECTRUM_SIZE][1]
+        self.s = meter_section[SPECTRUM]
+        # Get spectrum position within the meter layout (from meters.txt spectrum.pos)
+        self.pos = meter_section.get(SPECTRUM_POS, (0, 0)) or (0, 0)
+        # screensaver_path is ~/peppy_remote/screensaver, spectrum is directly under it
+        self.SpectrumPath = os.path.join(screensaver_path, 'spectrum')
+        
+    
+    def start(self):
+        """Initialize spectrum visual components (but not data source)."""
+        try:
+            import pygame as pg
+            import configparser
+            from spectrumutil import SpectrumUtil
+            from spectrum.spectrum import Spectrum
+            from spectrumconfigparser import SCREEN_WIDTH, SCREEN_HEIGHT, AVAILABLE_SPECTRUM_NAMES
+            
+            # Set up util for spectrum
+            self.util.spectrum_size = (self.w, self.h, self.s)
+            self.util.pygame_screen = self.util.PYGAME_SCREEN
+            self.util.image_util = SpectrumUtil()
+            
+            # Save original screen_rect (full meter display area)
+            original_screen_rect = getattr(self.util, 'screen_rect', None)
+            
+            # Get templates_spectrum path from SMB mount
+            # screensaver_path is ~/peppy_remote/screensaver
+            # SMB mount is at ~/peppy_remote/mnt (contains templates/ and templates_spectrum/)
+            install_dir = os.path.dirname(self.screensaver_path)  # ~/peppy_remote
+            templates_spectrum_path = os.path.join(install_dir, 'mnt', 'templates_spectrum')
+            
+            # Get the meter folder name (e.g., "1280x720_custom_3") from config
+            from configfileparser import SCREEN_INFO, METER_FOLDER
+            meter_folder = self.util.meter_config[SCREEN_INFO][METER_FOLDER]  # e.g., "1280x720_custom_3"
+            
+            # Set up spectrum config.txt to point to the right template folder
+            spectrum_config_path = os.path.join(self.SpectrumPath, 'config.txt')
+            if os.path.exists(spectrum_config_path):
+                sp_config = configparser.ConfigParser()
+                sp_config.read(spectrum_config_path)
+                
+                # Update paths for remote client
+                if 'current' not in sp_config:
+                    sp_config['current'] = {}
+                sp_config['current']['base.folder'] = templates_spectrum_path
+                sp_config['current']['spectrum.folder'] = meter_folder
+                # Update pipe name to avoid error (won't be used since we don't start data source)
+                sp_config['current']['pipe.name'] = '/tmp/myfifosa'
+                
+                with open(spectrum_config_path, 'w') as f:
+                    sp_config.write(f)
+            
+            # Change to spectrum path to find config
+            original_cwd = os.getcwd()
+            os.chdir(self.SpectrumPath)
+            
+            try:
+                # Create spectrum object (standalone=False for plugin mode)
+                # Note: Spectrum.__init__ calls ScreensaverSpectrum which overwrites util.screen_rect
+                self.sp = Spectrum(self.util, standalone=False)
+                
+                
+                # Override dimensions
+                self.sp.config[SCREEN_WIDTH] = self.w
+                self.sp.config[SCREEN_HEIGHT] = self.h
+                
+                # Set spectrum name and reload configs
+                self.sp.config[AVAILABLE_SPECTRUM_NAMES] = [self.s]
+                self.sp.spectrum_configs = self.sp.config_parser.get_spectrum_configs()
+                
+                self.sp.init_spectrums()
+                
+                # Initialize visual components (from Spectrum.start() but without data source)
+                # This sets up bounding_box for all components
+                from spectrumconfigparser import REFLECTION_GAP
+                self.sp.index = 0
+                self.sp.set_background()
+                self.sp.set_bars()
+                self.sp.reflection_gap = self.sp.spectrum_configs[self.sp.index].get(REFLECTION_GAP, 0)
+                self.sp.set_reflections()
+                self.sp.set_toppings()
+                self.sp.set_foreground()
+                self.sp.init_variables()
+                
+                # CRITICAL: Offset all component positions by spectrum.pos from meters.txt
+                # The spectrum renders with coordinates relative to its own canvas (0,0)
+                # but we need to position it within the meter layout
+                pos_x, pos_y = self.pos
+                if pos_x != 0 or pos_y != 0:
+                    for comp in self.sp.components:
+                        if hasattr(comp, 'content_x'):
+                            comp.content_x += pos_x
+                        if hasattr(comp, 'content_y'):
+                            comp.content_y += pos_y
+                    print(f"[RemoteSpectrum] Applied position offset: ({pos_x}, {pos_y})")
+                
+                # Restore original screen_rect (full screen) - Spectrum.__init__ overwrote it
+                if original_screen_rect is not None:
+                    self.util.screen_rect = original_screen_rect
+                else:
+                    # Set to full screen if wasn't set before
+                    from configfileparser import SCREEN_INFO, WIDTH, HEIGHT
+                    screen_w = self.util.meter_config[SCREEN_INFO][WIDTH]
+                    screen_h = self.util.meter_config[SCREEN_INFO][HEIGHT]
+                    self.util.screen_rect = pg.Rect(0, 0, screen_w, screen_h)
+                
+                # Store spectrum clip rect for drawing
+                # The spectrum content is positioned based on spectrum.x and spectrum.y from spectrum.txt
+                # NOT from self.pos (meters.txt spectrum.pos which is often 0,0)
+                spectrum_x = self.sp.spectrum_configs[0].get('spectrum.x', 0)
+                spectrum_y = self.sp.spectrum_configs[0].get('spectrum.y', 0)
+                # The clip rect should cover where the spectrum actually renders
+                # Content ranges from (spectrum_x, spectrum_y - bar_height) to (spectrum_x + w, spectrum_y + reflection_height)
+                # For safety, use the full spectrum canvas dimensions positioned at spectrum.x/y
+                self.spectrum_clip_rect = pg.Rect(spectrum_x, spectrum_y - self.sp.height, self.w, self.h + self.sp.height)
+                
+                # Set run flag but DON'T start data source (we feed via network)
+                self.sp.run_flag = True
+                # NOT calling: self.sp.start_data_source()
+                
+                self._initialized = True
+                
+            finally:
+                os.chdir(original_cwd)
+                
+        except Exception as e:
+            print(f"[RemoteSpectrum] Failed to initialize: {e}")
+            import traceback
+            traceback.print_exc()
+            self.sp = None
+    
+    def update(self):
+        """Update spectrum from network data and render."""
+        if not self._initialized or self.sp is None:
+            if not hasattr(self, '_dbg_init_warn'):
+                print(f"[RemoteSpectrum] update: not initialized={not self._initialized}, sp={self.sp}")
+                self._dbg_init_warn = True
+            return
+        
+        # Get bar heights from network
+        bins = self.spectrum_receiver.get_bins()
+        if not bins:
+            return
+        
+        # No smoothing - use raw values from server (server already applies smoothing)
+        # The server's Spectrum object processes FFT data with its own timing
+        
+        
+        # Inject bar heights using Spectrum's set_bar_y method
+        # The server sends processed bar heights, so we can use them directly
+        num_bars = min(len(bins), len(self.sp._prev_bar_heights))
+        
+        for i in range(num_bars):
+            new_height = bins[i]
+            # Fade in effect on first data
+            if not self._fade_in_done:
+                new_height *= self._fade_factor
+            
+            # Use Spectrum's proper set_bar_y method (1-based index)
+            idx = i + 1
+            try:
+                self.sp.set_bar_y(idx, new_height)
+                # Also update reflection and topping if they exist
+                if hasattr(self.sp, 'set_reflection_y'):
+                    self.sp.set_reflection_y(idx, new_height)
+                if hasattr(self.sp, 'set_topping_y'):
+                    self.sp.set_topping_y(idx, new_height)
+            except (IndexError, AttributeError):
+                pass  # Silently ignore index errors
+        
+        # Gradual fade-in
+        if not self._fade_in_done:
+            self._fade_factor = min(1.0, self._fade_factor + 0.05)  # ~20 frames to full
+            if self._fade_factor >= 1.0:
+                self._fade_in_done = True
+        
+        # Draw spectrum (without display.update - parent handles that)
+        try:
+            import pygame as pg
+            prev_clip = self.util.pygame_screen.get_clip()
+            # Use spectrum-specific clip rect
+            clip_rect = getattr(self, 'spectrum_clip_rect', self.util.screen_rect)
+            self.util.pygame_screen.set_clip(clip_rect)
+            
+            # Clean and draw
+            if hasattr(self.sp, '_dirty_rects') and self.sp._dirty_rects:
+                for rect in self.sp._dirty_rects:
+                    self.sp.draw_area(rect)
+                self.sp._dirty_rects = []
+            self.sp.draw()
+            
+            self.util.pygame_screen.set_clip(prev_clip)
+        except Exception:
+            pass  # Silently handle draw errors
+    
+    def stop_thread(self):
+        """Stop spectrum."""
+        if self.sp:
+            try:
+                self.sp.stop()
+            except Exception:
+                pass
+        self._initialized = False
+    
+    def get_current_bins(self):
+        """Get current bar heights (for compatibility)."""
+        if self.sp and hasattr(self.sp, '_prev_bar_heights'):
+            return list(self.sp._prev_bar_heights)
+        return None
 
 
 # =============================================================================
@@ -805,8 +1168,15 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher):
 # =============================================================================
 # Full PeppyMeter Display (using volumio_peppymeter)
 # =============================================================================
-def run_peppymeter_display(level_receiver, server_info, templates_path, config_fetcher):
-    """Run full PeppyMeter rendering using volumio_peppymeter code."""
+def run_peppymeter_display(level_receiver, server_info, templates_path, config_fetcher, spectrum_receiver=None):
+    """Run full PeppyMeter rendering using volumio_peppymeter code.
+    
+    :param level_receiver: LevelReceiver for audio level data
+    :param server_info: Server information dict (ip, ports, etc.)
+    :param templates_path: Path to templates
+    :param config_fetcher: ConfigFetcher instance
+    :param spectrum_receiver: Optional SpectrumReceiver for spectrum data
+    """
     
     import ctypes
     
@@ -991,6 +1361,32 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         pm.util.PYGAME_SCREEN = screen
         pm.util.screen_copy = pm.util.PYGAME_SCREEN
         
+        # Initialize remote spectrum if receiver is provided and spectrum is enabled
+        remote_spectrum = None
+        if spectrum_receiver:
+            try:
+                from volumio_configfileparser import SPECTRUM_VISIBLE
+                from configfileparser import METER
+                meter_name = pm.util.meter_config[METER]
+                meter_section = meter_config_volumio.get(meter_name, {})
+                spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
+                
+                if spectrum_visible:
+                    print("Initializing remote spectrum...")
+                    remote_spectrum = RemoteSpectrumOutput(
+                        pm.util, meter_config_volumio, screensaver_path, spectrum_receiver
+                    )
+                    remote_spectrum.start()
+                    # Inject into callback so it's used instead of local SpectrumOutput
+                    callback.spectrum_output = remote_spectrum
+                    print("  Remote spectrum initialized")
+                else:
+                    print("  Spectrum not visible in current meter config")
+            except Exception as e:
+                print(f"  Remote spectrum initialization failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
         mode_str = "fullscreen" if is_fullscreen else ("windowed" if is_windowed else "frameless")
         print(f"Starting meter display ({mode_str})...")
         print("Press ESC or Q to exit, or click/touch screen")
@@ -1040,6 +1436,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 pm.meter.malloc_trim = callback.trim_memory
                 pm.malloc_trim = callback.exit_trim_memory
                 
+                # Stop old spectrum if running
+                if spectrum_receiver and remote_spectrum:
+                    remote_spectrum.stop_thread()
+                    remote_spectrum = None
+                
                 # Use new config dimensions; recreate window if resolution changed
                 new_screen_w = pm.util.meter_config[SCREEN_INFO][WIDTH]
                 new_screen_h = pm.util.meter_config[SCREEN_INFO][HEIGHT]
@@ -1068,16 +1469,39 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     # Update depth even if size unchanged
                     depth = new_depth
                 
-                # Attach current window to the new pm
+                # Attach current window to the new pm BEFORE spectrum init
                 pm.util.meter_config[SCREEN_INFO][WIDTH] = screen_w
                 pm.util.meter_config[SCREEN_INFO][HEIGHT] = screen_h
                 pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
                 pm.util.PYGAME_SCREEN = screen
                 pm.util.screen_copy = screen
                 pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
+                
+                # Re-initialize remote spectrum AFTER screen is attached
+                if spectrum_receiver:
+                    try:
+                        from volumio_configfileparser import SPECTRUM_VISIBLE
+                        from configfileparser import METER
+                        meter_name = pm.util.meter_config[METER]
+                        meter_section = meter_config_volumio.get(meter_name, {})
+                        spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
+                        if spectrum_visible:
+                            remote_spectrum = RemoteSpectrumOutput(
+                                pm.util, meter_config_volumio, screensaver_path, spectrum_receiver
+                            )
+                            remote_spectrum.start()
+                            callback.spectrum_output = remote_spectrum
+                    except Exception as e:
+                        print(f"  Remote spectrum reload failed: {e}")
+                
                 print("Config reloaded from server.")
         finally:
             version_listener.stop_listener()
+            if remote_spectrum:
+                try:
+                    remote_spectrum.stop_thread()
+                except Exception:
+                    pass
             if os.path.exists(peppy_running_file):
                 os.remove(peppy_running_file)
         
@@ -1217,6 +1641,8 @@ def main():
                        help='Server hostname or IP (skip discovery)')
     parser.add_argument('--level-port', type=int,
                        help='UDP port for level data')
+    parser.add_argument('--spectrum-port', type=int,
+                       help='UDP port for spectrum data')
     parser.add_argument('--volumio-port', type=int,
                        help='Volumio socket.io port')
     parser.add_argument('--no-mount', action='store_true',
@@ -1273,6 +1699,8 @@ def main():
         config["server"]["host"] = args.server
     if args.level_port:
         config["server"]["level_port"] = args.level_port
+    if args.spectrum_port:
+        config["server"]["spectrum_port"] = args.spectrum_port
     if args.volumio_port:
         config["server"]["volumio_port"] = args.volumio_port
     if args.discovery_timeout:
@@ -1316,6 +1744,7 @@ def main():
             'ip': ip,
             'hostname': server_host,
             'level_port': config["server"]["level_port"],
+            'spectrum_port': config["server"]["spectrum_port"],
             'volumio_port': config["server"]["volumio_port"]
         }
         print(f"Using server: {server_host} ({ip})")
@@ -1371,10 +1800,16 @@ def main():
     level_receiver = LevelReceiver(server_info['ip'], server_info['level_port'])
     level_receiver.start()
     
+    # Start spectrum receiver
+    spectrum_port = server_info.get('spectrum_port', config['server'].get('spectrum_port', 5581))
+    spectrum_receiver = SpectrumReceiver(server_info['ip'], spectrum_port)
+    spectrum_receiver.start()
+    
     # Handle graceful shutdown
     def signal_handler(sig, frame):
         print("\nShutting down...")
         level_receiver.stop()
+        spectrum_receiver.stop()
         if smb_mount:
             smb_mount.unmount()
         sys.exit(0)
@@ -1397,13 +1832,15 @@ def main():
     else:
         # Full PeppyMeter rendering
         success = run_peppymeter_display(level_receiver, server_info, 
-                                         templates_path, config_fetcher)
+                                         templates_path, config_fetcher,
+                                         spectrum_receiver=spectrum_receiver)
         if not success:
             print("\nFalling back to test display...")
             run_test_display(level_receiver)
     
     # Cleanup
     level_receiver.stop()
+    spectrum_receiver.stop()
     if smb_mount:
         smb_mount.unmount()
 
