@@ -52,6 +52,21 @@ SMB_MOUNT_BASE = os.path.join(SCRIPT_DIR, "mnt")  # Local mount point (portable)
 SMB_SHARE_PATH = "Internal Storage/peppy_screensaver"
 LOG_FILE = os.path.join(SCRIPT_DIR, "peppy_remote.log")
 
+# =============================================================================
+# Client Debug System
+# =============================================================================
+# Debug levels: 'off', 'basic', 'verbose', 'trace'
+# - off: No debug output
+# - basic: Key events (discovery, connections, config changes)
+# - verbose: Detailed operations (mount, network, config parsing)
+# - trace: Per-frame/per-packet data (spectrum bins, level values)
+CLIENT_DEBUG_LEVEL = 'off'
+CLIENT_DEBUG_TRACE = {
+    'spectrum': False,   # Per-packet spectrum logging
+    'network': False,    # Connection/discovery details
+    'config': False      # Config parsing details
+}
+
 
 def setup_logging(to_file=False):
     """Setup logging - to file when running without terminal, stdout otherwise."""
@@ -69,6 +84,44 @@ def setup_logging(to_file=False):
         format='%(asctime)s [%(levelname)s] %(message)s',
         handlers=[logging.StreamHandler(sys.stdout)]
     )
+
+
+def init_client_debug(config):
+    """Initialize client debug settings from config."""
+    global CLIENT_DEBUG_LEVEL, CLIENT_DEBUG_TRACE
+    
+    debug_config = config.get('debug', {})
+    CLIENT_DEBUG_LEVEL = debug_config.get('level', 'off')
+    CLIENT_DEBUG_TRACE['spectrum'] = debug_config.get('trace_spectrum', False)
+    CLIENT_DEBUG_TRACE['network'] = debug_config.get('trace_network', False)
+    CLIENT_DEBUG_TRACE['config'] = debug_config.get('trace_config', False)
+
+
+def log_client(message, level='basic', trace_component=None):
+    """Log a debug message if the current debug level allows it.
+    
+    Args:
+        message: The message to log
+        level: Required level - 'basic', 'verbose', or 'trace'
+        trace_component: For trace level, which component flag to check
+                        ('spectrum', 'network', 'config')
+    """
+    level_order = {'off': 0, 'basic': 1, 'verbose': 2, 'trace': 3}
+    current_level = level_order.get(CLIENT_DEBUG_LEVEL, 0)
+    required_level = level_order.get(level, 1)
+    
+    # Check if level is sufficient
+    if current_level < required_level:
+        return
+    
+    # For trace level, also check component-specific flag
+    if level == 'trace' and trace_component:
+        if not CLIENT_DEBUG_TRACE.get(trace_component, False):
+            return
+    
+    # Format and print
+    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    print(f"[{timestamp}] [CLIENT] {message}")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 
 # Default configuration
@@ -90,7 +143,17 @@ DEFAULT_CONFIG = {
     },
     "templates": {
         "use_smb": True,
-        "local_path": None      # Override path for templates
+        "local_path": None,             # Override path for meter templates
+        "spectrum_local_path": None     # Override path for spectrum templates
+    },
+    "spectrum": {
+        "decay_rate": 0.95      # Per-frame decay (0.85=fast, 0.98=slow)
+    },
+    "debug": {
+        "level": "off",         # off/basic/verbose/trace
+        "trace_spectrum": False,
+        "trace_network": False,
+        "trace_config": False
     }
 }
 
@@ -190,9 +253,27 @@ def run_config_wizard():
         # Template settings
         smb = "yes" if config["templates"]["use_smb"] else "no"
         local = config["templates"]["local_path"] or "(none)"
+        spectrum_local = config["templates"].get("spectrum_local_path") or "(none)"
         print("Template Settings:")
         print(f"  9. Use SMB mount:     {smb}")
         print(f"  10. Local path:       {local}")
+        print(f"  11. Spectrum path:    {spectrum_local}")
+        print()
+        
+        # Spectrum settings
+        decay = config.get("spectrum", {}).get("decay_rate", 0.95)
+        print("Spectrum Settings:")
+        print(f"  12. Decay rate:       {decay} (0.85=fast, 0.98=slow)")
+        print()
+        
+        # Debug settings
+        debug_level = config.get("debug", {}).get("level", "off")
+        trace_spectrum = "yes" if config.get("debug", {}).get("trace_spectrum", False) else "no"
+        trace_network = "yes" if config.get("debug", {}).get("trace_network", False) else "no"
+        print("Debug Settings:")
+        print(f"  13. Debug level:      {debug_level}")
+        print(f"  14. Trace spectrum:   {trace_spectrum}")
+        print(f"  15. Trace network:    {trace_network}")
         print()
         
         print("-" * 50)
@@ -293,6 +374,54 @@ def run_config_wizard():
             if path:
                 config["templates"]["local_path"] = path
     
+    def config_decay_rate():
+        print()
+        print("Spectrum decay rate (per frame):")
+        print("  Controls how fast spectrum bars fall after peaks")
+        print("  0.85 = fast drop (aggressive)")
+        print("  0.95 = medium drop (default)")
+        print("  0.98 = slow drop (smooth)")
+        print()
+        current = config.get("spectrum", {}).get("decay_rate", 0.95)
+        try:
+            value = float(get_input("Decay rate (0.5-0.99)", current))
+            value = max(0.5, min(0.99, value))  # Clamp to valid range
+            if "spectrum" not in config:
+                config["spectrum"] = {}
+            config["spectrum"]["decay_rate"] = value
+        except ValueError:
+            print("Invalid number")
+    
+    def config_debug_level():
+        print()
+        print("Debug output level:")
+        print("  1. off     - No debug output")
+        print("  2. basic   - Key events (discovery, config changes)")
+        print("  3. verbose - Detailed operations")
+        print("  4. trace   - Per-packet data (high volume)")
+        print()
+        levels = {"1": "off", "2": "basic", "3": "verbose", "4": "trace"}
+        current = config.get("debug", {}).get("level", "off")
+        current_num = {"off": "1", "basic": "2", "verbose": "3", "trace": "4"}.get(current, "1")
+        choice = input(f"Choice [{current_num}]: ").strip() or current_num
+        if choice in levels:
+            if "debug" not in config:
+                config["debug"] = {}
+            config["debug"]["level"] = levels[choice]
+    
+    def config_trace_toggle(key, name):
+        print()
+        current = config.get("debug", {}).get(key, False)
+        current_str = "yes" if current else "no"
+        print(f"{name}:")
+        print(f"  1. No")
+        print(f"  2. Yes")
+        print()
+        choice = input(f"Choice [{'2' if current else '1'}]: ").strip() or ('2' if current else '1')
+        if "debug" not in config:
+            config["debug"] = {}
+        config["debug"][key] = (choice == "2")
+    
     # Main loop
     while True:
         show_menu()
@@ -327,6 +456,17 @@ def run_config_wizard():
         elif choice == "10":
             path = input("Local templates path (empty to clear): ").strip()
             config["templates"]["local_path"] = path if path else None
+        elif choice == "11":
+            path = input("Spectrum templates path (empty to clear): ").strip()
+            config["templates"]["spectrum_local_path"] = path if path else None
+        elif choice == "12":
+            config_decay_rate()
+        elif choice == "13":
+            config_debug_level()
+        elif choice == "14":
+            config_trace_toggle("trace_spectrum", "Trace spectrum packets")
+        elif choice == "15":
+            config_trace_toggle("trace_network", "Trace network connections")
         elif choice == "S":
             config["wizard_completed"] = True
             if save_config(config):
@@ -365,6 +505,7 @@ class ServerDiscovery:
     def discover(self):
         """Listen for server announcements, return dict of discovered servers."""
         print(f"Discovering PeppyMeter servers on UDP port {self.port}...")
+        log_client(f"Discovery: listening on UDP port {self.port}, timeout={self.timeout}s", "verbose")
         
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -383,6 +524,8 @@ class ServerDiscovery:
                         if ip not in self.servers:
                             hostname = info.get('hostname', ip)
                             print(f"  Found: {hostname} ({ip})")
+                            log_client(f"Discovery: found server {hostname} ({ip})", "basic")
+                            log_client(f"Discovery: server info: {info}", "verbose")
                             self.servers[ip] = {
                                 'ip': ip,
                                 'hostname': hostname,
@@ -397,15 +540,19 @@ class ServerDiscovery:
                             new_version = info.get('config_version', '')
                             if new_version and new_version != self.servers[ip].get('config_version'):
                                 self.servers[ip]['config_version'] = new_version
+                                log_client(f"Discovery: config version updated to {new_version}", "verbose")
                 except (json.JSONDecodeError, UnicodeDecodeError):
+                    log_client(f"Discovery: invalid packet from {addr}", "trace", "network")
                     pass
             except socket.timeout:
                 continue
             except Exception as e:
                 print(f"  Discovery error: {e}")
+                log_client(f"Discovery: error {e}", "verbose")
                 break
         
         sock.close()
+        log_client(f"Discovery: found {len(self.servers)} servers", "verbose")
         return self.servers
     
     def stop(self):
@@ -418,15 +565,18 @@ class ServerDiscovery:
 class ConfigVersionListener(threading.Thread):
     """
     Listens for UDP discovery packets from the PeppyMeter server and sets
-    reload_requested when config_version in a packet differs from the
-    client's current version (so the client can reload config/templates).
+    reload_requested when config_version or active_meter in a packet differs
+    from the client's current values (so the client can reload config/templates).
+    
+    Protocol version 3+ includes active_meter for random meter sync.
     """
     def __init__(self, port, current_version_holder, server_ip=None):
         super().__init__(daemon=True)
         self.port = port
-        self.current_version_holder = current_version_holder  # dict with 'version' key
+        self.current_version_holder = current_version_holder  # dict with 'version' and 'active_meter' keys
         self.server_ip = server_ip  # if set, only accept packets from this IP
         self.reload_requested = False
+        self.new_active_meter = None  # Set when active_meter changes (for config update)
         self._stop = False
         self._sock = None
 
@@ -448,12 +598,23 @@ class ConfigVersionListener(threading.Thread):
                     info = json.loads(data.decode('utf-8'))
                     if info.get('service') != 'peppy_level_server':
                         continue
+                    
+                    # Check config_version change (file-based config changes)
                     new_version = info.get('config_version', '')
-                    if not new_version:
-                        continue
-                    current = self.current_version_holder.get('version', '')
-                    if new_version != current:
-                        self.reload_requested = True
+                    if new_version:
+                        current = self.current_version_holder.get('version', '')
+                        if new_version != current:
+                            self.reload_requested = True
+                    
+                    # Check active_meter change (random meter sync, protocol v3+)
+                    new_meter = info.get('active_meter', '')
+                    if new_meter:
+                        current_meter = self.current_version_holder.get('active_meter', '')
+                        if new_meter != current_meter:
+                            # Active meter changed - trigger reload with new meter name
+                            self.new_active_meter = new_meter
+                            self.reload_requested = True
+                            
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
             except socket.timeout:
@@ -708,8 +869,26 @@ class SMBMount:
     
     def mount(self):
         """Mount the SMB share. Returns True on success."""
-        # Create mount point
-        self.mount_point.mkdir(parents=True, exist_ok=True)
+        # Handle stale mount points - unmount first if stale
+        self._cleanup_stale_mount()
+        
+        # Create mount point (handle stale file handles gracefully)
+        try:
+            self.mount_point.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            # Stale file handle (errno 116) or other issues - try to recover
+            if e.errno == 116:  # ESTALE - Stale file handle
+                print(f"Stale mount detected at {self.mount_point}, cleaning up...")
+                self._force_unmount()
+                # Remove stale directory and recreate
+                try:
+                    subprocess.run(['sudo', 'rm', '-rf', str(self.mount_point)],
+                                 capture_output=True, timeout=5)
+                except Exception:
+                    pass
+                self.mount_point.mkdir(parents=True, exist_ok=True)
+            else:
+                raise
         
         # Check if already mounted
         if self._is_mounted():
@@ -756,8 +935,44 @@ class SMBMount:
     
     def _is_mounted(self):
         """Check if the mount point is currently mounted."""
-        result = subprocess.run(['mountpoint', '-q', str(self.mount_point)])
-        return result.returncode == 0
+        try:
+            result = subprocess.run(['mountpoint', '-q', str(self.mount_point)], timeout=5)
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            # Timeout usually means stale mount
+            return False
+        except Exception:
+            return False
+    
+    def _cleanup_stale_mount(self):
+        """Clean up any stale mounts at the mount point."""
+        try:
+            # Check if mount point exists and might be stale
+            if self.mount_point.exists():
+                # Try to access it - stale mounts will fail
+                try:
+                    list(self.mount_point.iterdir())
+                except OSError as e:
+                    if e.errno == 116:  # ESTALE
+                        print(f"Cleaning up stale mount at {self.mount_point}...")
+                        self._force_unmount()
+        except Exception:
+            pass
+    
+    def _force_unmount(self):
+        """Force unmount the mount point."""
+        try:
+            # Try lazy unmount first
+            subprocess.run(['sudo', 'umount', '-l', str(self.mount_point)],
+                         capture_output=True, timeout=10)
+        except Exception:
+            pass
+        try:
+            # Force unmount as fallback
+            subprocess.run(['sudo', 'umount', '-f', str(self.mount_point)],
+                         capture_output=True, timeout=10)
+        except Exception:
+            pass
     
     @property
     def templates_path(self):
@@ -988,7 +1203,12 @@ class SpectrumReceiver:
                         # Log first successful packet
                         if not self._first_packet_logged:
                             print(f"Spectrum receiver: first packet from {source_ip} - {size} bins")
+                            log_client(f"Spectrum: first packet from {source_ip}, {size} bins", "basic")
                             self._first_packet_logged = True
+                        
+                        # Trace log each packet (high volume - only when trace_spectrum enabled)
+                        log_client(f"Spectrum: seq={seq}, bins={size}, max={max(bins):.1f}", 
+                                   "trace", "spectrum")
                             
             except socket.timeout:
                 continue
@@ -1085,13 +1305,16 @@ class RemoteSpectrumOutput:
     from the SpectrumReceiver and injecting them directly.
     """
     
-    def __init__(self, util, meter_config_volumio, screensaver_path, spectrum_receiver):
+    def __init__(self, util, meter_config_volumio, screensaver_path, spectrum_receiver, 
+                 decay_rate=0.95, spectrum_templates_path=None):
         """Initialize remote spectrum output.
         
         :param util: PeppyMeter utility class
         :param meter_config_volumio: Volumio meter configuration
         :param screensaver_path: Path to screensaver directory (contains 'spectrum' subfolder)
         :param spectrum_receiver: SpectrumReceiver instance for network data
+        :param decay_rate: Per-frame decay multiplier (0.85=fast, 0.98=slow)
+        :param spectrum_templates_path: Override path for spectrum templates (None = use SMB mount)
         """
         self.util = util
         self.meter_config_volumio = meter_config_volumio
@@ -1103,7 +1326,11 @@ class RemoteSpectrumOutput:
         self._fade_factor = 0.0
         self._last_packet_seq = -1  # Track last processed packet
         self._local_bins = None  # Local copy for decay between packets
-        self._decay_rate = 0.85  # Decay multiplier per frame (0.85 = fast drop)
+        # Validate and clamp decay rate to sensible range
+        self._decay_rate = max(0.5, min(0.99, decay_rate))
+        self._spectrum_templates_path = spectrum_templates_path  # Override for local templates
+        
+        log_client(f"Spectrum decay rate: {self._decay_rate}", "verbose")
         
         # Get spectrum config from meter section
         from volumio_configfileparser import SPECTRUM, SPECTRUM_SIZE, SPECTRUM_POS
@@ -1138,11 +1365,16 @@ class RemoteSpectrumOutput:
             # Save original screen_rect (full meter display area)
             original_screen_rect = getattr(self.util, 'screen_rect', None)
             
-            # Get templates_spectrum path from SMB mount
-            # screensaver_path is ~/peppy_remote/screensaver
-            # SMB mount is at ~/peppy_remote/mnt (contains templates/ and templates_spectrum/)
-            install_dir = os.path.dirname(self.screensaver_path)  # ~/peppy_remote
-            templates_spectrum_path = os.path.join(install_dir, 'mnt', 'templates_spectrum')
+            # Get templates_spectrum path - use override if provided, else SMB mount
+            if self._spectrum_templates_path:
+                templates_spectrum_path = self._spectrum_templates_path
+                log_client(f"Using local spectrum templates: {templates_spectrum_path}", "verbose")
+            else:
+                # screensaver_path is ~/peppy_remote/screensaver
+                # SMB mount is at ~/peppy_remote/mnt (contains templates/ and templates_spectrum/)
+                install_dir = os.path.dirname(self.screensaver_path)  # ~/peppy_remote
+                templates_spectrum_path = os.path.join(install_dir, 'mnt', 'templates_spectrum')
+                log_client(f"Using SMB spectrum templates: {templates_spectrum_path}", "verbose")
             
             # Get the meter folder name (e.g., "1280x720_custom_3") from config
             from configfileparser import SCREEN_INFO, METER_FOLDER
@@ -1373,11 +1605,16 @@ class RemoteSpectrumOutput:
 # =============================================================================
 # Setup Remote Config
 # =============================================================================
-def setup_remote_config(peppymeter_path, templates_path, config_fetcher):
+def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override=None):
     """
     Set up config.txt for remote client mode.
     
     Fetches config from server via HTTP and adjusts paths for local use.
+    
+    :param peppymeter_path: Path to peppymeter directory
+    :param templates_path: Path to meter templates
+    :param config_fetcher: ConfigFetcher instance for HTTP config retrieval
+    :param active_meter_override: If set, override meter name (for random meter sync)
     """
     import configparser
     
@@ -1420,6 +1657,32 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher):
     # Update paths for local client
     config['current']['base.folder'] = templates_path
     
+    # Ensure 'meter' key exists for upstream peppymeter compatibility
+    # Server config has both: meter.folder (folder name) and meter (meter selection)
+    # Upstream peppymeter expects [current] meter = <meter_name>
+    #
+    # meter.folder = template folder (e.g., '1280x720_custom_3') - contains meters.txt
+    # meter = meter section name from meters.txt (e.g., 'black-white', 'vu-analog')
+    #         OR 'random' or a comma-separated list
+    #
+    # When server broadcasts active_meter, it's the SECTION name (not folder)
+    meter_folder = config['current'].get('meter.folder', '')
+    meter_value = config['current'].get('meter', '')
+    
+    # If active_meter_override is provided (from server's random meter sync),
+    # only update 'meter' - this is the section name currently displayed
+    # Keep meter.folder unchanged (it's already correct from server config)
+    if active_meter_override:
+        config['current']['meter'] = active_meter_override
+        print(f"  Using active meter from server: {active_meter_override}")
+    elif not meter_value and meter_folder:
+        # Fallback: use meter.folder value as meter if meter is missing
+        config['current']['meter'] = meter_folder
+    elif not meter_value:
+        # Neither exists - this is a broken config, set a safe default
+        print(f"  WARNING: No 'meter' or 'meter.folder' in config, using 'random'")
+        config['current']['meter'] = 'random'
+    
     # SDL settings for windowed display (not embedded framebuffer)
     # These will be read by volumio_peppymeter's init_display()
     config['sdl.env']['framebuffer.device'] = ''
@@ -1450,7 +1713,8 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher):
 # =============================================================================
 # Full PeppyMeter Display (using volumio_peppymeter)
 # =============================================================================
-def run_peppymeter_display(level_receiver, server_info, templates_path, config_fetcher, spectrum_receiver=None):
+def run_peppymeter_display(level_receiver, server_info, templates_path, config_fetcher, 
+                           spectrum_receiver=None, client_config=None):
     """Run full PeppyMeter rendering using volumio_peppymeter code.
     
     :param level_receiver: LevelReceiver for audio level data
@@ -1458,7 +1722,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     :param templates_path: Path to templates
     :param config_fetcher: ConfigFetcher instance
     :param spectrum_receiver: Optional SpectrumReceiver for spectrum data
+    :param client_config: Client configuration dict (for spectrum settings, etc.)
     """
+    client_config = client_config or {}
     
     import ctypes
     
@@ -1544,6 +1810,19 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             start_display_output, CallBack,
             init_debug_config, log_debug, memory_limit
         )
+        
+        # CRITICAL: Patch CurDir and PeppyPath in server modules for remote client compatibility
+        # The server modules use CurDir (set to os.getcwd() at import time) to construct
+        # paths like CurDir + '/screensaver/spectrum'. On the server, CurDir is the plugin
+        # root. On the client, we must set it to SCRIPT_DIR (~/peppy_remote) so that:
+        #   CurDir + '/screensaver/peppymeter' = ~/peppy_remote/screensaver/peppymeter (correct)
+        #   CurDir + '/screensaver/spectrum'   = ~/peppy_remote/screensaver/spectrum (correct)
+        # Without this patch, SpectrumOutput gets a doubled path and crashes.
+        import volumio_peppymeter
+        import volumio_spectrum
+        volumio_peppymeter.CurDir = SCRIPT_DIR
+        volumio_peppymeter.PeppyPath = os.path.join(SCRIPT_DIR, 'screensaver', 'peppymeter')
+        volumio_spectrum.CurDir = SCRIPT_DIR
         
         # Initialize base PeppyMeter
         print("Initializing PeppyMeter...")
@@ -1660,8 +1939,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 
                 if spectrum_visible:
                     print("Initializing remote spectrum...")
+                    # Get spectrum settings from client config
+                    spectrum_config = client_config.get('spectrum', {})
+                    decay_rate = spectrum_config.get('decay_rate', 0.95)
+                    templates_config = client_config.get('templates', {})
+                    spectrum_templates_path = templates_config.get('spectrum_local_path')
+                    
                     remote_spectrum = RemoteSpectrumOutput(
-                        pm.util, meter_config_volumio, screensaver_path, spectrum_receiver
+                        pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
+                        decay_rate=decay_rate,
+                        spectrum_templates_path=spectrum_templates_path
                     )
                     remote_spectrum.start()
                     # Inject into callback so it's used instead of local SpectrumOutput
@@ -1692,7 +1979,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         try:
             while True:
                 current_version_holder['version'] = config_fetcher.cached_version or ''
+                # Track active meter from listener (if known)
+                if version_listener.new_active_meter:
+                    current_version_holder['active_meter'] = version_listener.new_active_meter
                 version_listener.reload_requested = False
+                version_listener.new_active_meter = None
                 Path(peppy_running_file).touch()
                 Path(peppy_running_file).chmod(0o777)
                 if reload_callback_supported:
@@ -1706,8 +1997,15 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                                         volumio_port=server_info['volumio_port'])
                 if not version_listener.reload_requested:
                     break
-                print("Config changed on server, reloading...")
-                setup_remote_config(peppymeter_path, templates_path, config_fetcher)
+                
+                # Get active_meter override if server sent a new one
+                active_meter_override = version_listener.new_active_meter
+                if active_meter_override:
+                    print(f"Server active meter changed to: {active_meter_override}")
+                else:
+                    print("Config changed on server, reloading...")
+                
+                setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override)
                 pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
                                quit_pygame_on_stop=False)
                 parser = Volumio_ConfigFileParser(pm.util)
@@ -1773,8 +2071,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                         meter_section = meter_config_volumio.get(meter_name, {})
                         spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
                         if spectrum_visible:
+                            # Get spectrum settings from client config
+                            spectrum_config = client_config.get('spectrum', {})
+                            decay_rate = spectrum_config.get('decay_rate', 0.95)
+                            templates_config = client_config.get('templates', {})
+                            spectrum_templates_path = templates_config.get('spectrum_local_path')
+                            
                             remote_spectrum = RemoteSpectrumOutput(
-                                pm.util, meter_config_volumio, screensaver_path, spectrum_receiver
+                                pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
+                                decay_rate=decay_rate,
+                                spectrum_templates_path=spectrum_templates_path
                             )
                             remote_spectrum.start()
                             callback.spectrum_output = remote_spectrum
@@ -1944,6 +2250,16 @@ def main():
                        help='Run in windowed mode (movable window)')
     parser.add_argument('--fullscreen', action='store_true',
                        help='Run in fullscreen mode')
+    parser.add_argument('--spectrum-templates',
+                       help='Path to spectrum templates directory (overrides SMB mount)')
+    parser.add_argument('--decay-rate', type=float,
+                       help='Spectrum bar decay rate per frame (0.85=fast, 0.98=slow, default 0.95)')
+    parser.add_argument('--debug', choices=['off', 'basic', 'verbose', 'trace'],
+                       help='Debug output level')
+    parser.add_argument('--trace-spectrum', action='store_true',
+                       help='Enable per-packet spectrum trace logging')
+    parser.add_argument('--trace-network', action='store_true',
+                       help='Enable network connection trace logging')
     
     args = parser.parse_args()
     
@@ -2003,6 +2319,24 @@ def main():
     if args.templates:
         config["templates"]["local_path"] = args.templates
         config["templates"]["use_smb"] = False
+    if args.spectrum_templates:
+        config["templates"]["spectrum_local_path"] = args.spectrum_templates
+    if args.decay_rate is not None:
+        config["spectrum"]["decay_rate"] = args.decay_rate
+    if args.debug:
+        config["debug"]["level"] = args.debug
+    if args.trace_spectrum:
+        config["debug"]["trace_spectrum"] = True
+    if args.trace_network:
+        config["debug"]["trace_network"] = True
+    
+    # Initialize client debug system from config
+    init_client_debug(config)
+    
+    # Log startup if debugging enabled
+    log_client("PeppyMeter Remote Client starting", "basic")
+    log_client(f"Debug level: {CLIENT_DEBUG_LEVEL}", "verbose")
+    log_client(f"Trace flags: {CLIENT_DEBUG_TRACE}", "verbose")
     
     # Store display config in environment for use by display init
     # (This is read by run_peppymeter_display)
@@ -2124,7 +2458,8 @@ def main():
         # Full PeppyMeter rendering
         success = run_peppymeter_display(level_receiver, server_info, 
                                          templates_path, config_fetcher,
-                                         spectrum_receiver=spectrum_receiver)
+                                         spectrum_receiver=spectrum_receiver,
+                                         client_config=config)
         if not success:
             print("\nFalling back to test display...")
             run_test_display(level_receiver)
