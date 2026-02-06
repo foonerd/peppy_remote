@@ -1807,16 +1807,52 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
     # If active_meter_override is provided (from server's random meter sync),
     # only update 'meter' - this is the section name currently displayed
     # Keep meter.folder unchanged (it's already correct from server config)
+    log_client(f"Config from server: meter.folder={meter_folder!r}, meter={meter_value!r}, override={active_meter_override!r}", "trace", "config")
+    
+    # Determine the meter to use
+    chosen_meter = None
     if active_meter_override:
-        config['current']['meter'] = active_meter_override
-        print(f"  Using active meter from server: {active_meter_override}")
+        # Server sent a specific active meter - validate it exists in the template
+        meters_file = os.path.join(templates_path, meter_folder, 'meters.txt') if meter_folder else ''
+        if meters_file and os.path.exists(meters_file):
+            try:
+                import configparser as cp
+                meters_cfg = cp.ConfigParser()
+                meters_cfg.read(meters_file)
+                # Check if the active_meter_override is a valid section in meters.txt
+                if active_meter_override in meters_cfg.sections():
+                    chosen_meter = active_meter_override
+                    print(f"  Using active meter from server: {active_meter_override}")
+                else:
+                    # Meter doesn't exist in this template - use server's meter value or random
+                    log_client(f"Active meter '{active_meter_override}' not found in {meter_folder}, using fallback", "verbose")
+                    chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
+                    print(f"  Active meter '{active_meter_override}' not in template, using: {chosen_meter}")
+            except Exception as e:
+                log_client(f"Failed to validate meter: {e}", "verbose")
+                chosen_meter = active_meter_override  # Try anyway
+                print(f"  Using active meter from server: {active_meter_override}")
+        else:
+            chosen_meter = active_meter_override
+            print(f"  Using active meter from server: {active_meter_override}")
     elif not meter_value and meter_folder:
         # Fallback: use meter.folder value as meter if meter is missing
-        config['current']['meter'] = meter_folder
+        chosen_meter = meter_folder
+        log_client(f"Using meter.folder as meter fallback: {meter_folder}", "verbose")
     elif not meter_value:
         # Neither exists - this is a broken config, set a safe default
         print(f"  WARNING: No 'meter' or 'meter.folder' in config, using 'random'")
+        chosen_meter = 'random'
+    else:
+        chosen_meter = meter_value
+    
+    # Set the chosen meter
+    config['current']['meter'] = chosen_meter or meter_folder or 'random'
+    
+    # Safety check
+    if not config['current'].get('meter'):
         config['current']['meter'] = 'random'
+        log_client(f"Forced meter setting: random", "verbose")
     
     # SDL settings for windowed display (not embedded framebuffer)
     # These will be read by volumio_peppymeter's init_display()
@@ -1834,13 +1870,24 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
     # Keep smooth buffer for smoother needle movement
     config['data.source']['smooth.buffer.size'] = '4'
     
-    # Write adjusted config
+    # Write adjusted config - ensure meter is always set
+    final_meter = config['current'].get('meter', '')
+    if not final_meter:
+        # Safety fallback - if somehow meter is still not set, use meter.folder
+        fallback = config['current'].get('meter.folder', 'random')
+        config['current']['meter'] = fallback
+        log_client(f"Config missing 'meter', using fallback: {fallback}", "verbose")
+    
     with open(config_path, 'w') as f:
         config.write(f)
+        f.flush()
+        os.fsync(f.fileno())  # Force write to disk
     
     if server_config_fetched:
         meter_folder = config['current'].get('meter.folder', 'unknown')
+        meter_value = config['current'].get('meter', 'MISSING')
         print(f"  Config adjusted for local use (meter: {meter_folder})")
+        log_client(f"Config written: meter.folder={meter_folder}, meter={meter_value}", "verbose")
     
     return config_path
 
@@ -2127,6 +2174,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 if version_listener.new_active_meter:
                     current_version_holder['active_meter'] = version_listener.new_active_meter
                 version_listener.reload_requested = False
+                # Save new_active_meter BEFORE clearing for use after display loop exits
+                pending_active_meter = version_listener.new_active_meter
                 version_listener.new_active_meter = None
                 Path(peppy_running_file).touch()
                 Path(peppy_running_file).chmod(0o777)
@@ -2143,12 +2192,15 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     break
                 
                 # Get active_meter override if server sent a new one
-                active_meter_override = version_listener.new_active_meter
+                # Check both the saved pending value and any new value that arrived during display
+                active_meter_override = version_listener.new_active_meter or pending_active_meter
                 if active_meter_override:
                     print(f"Server active meter changed to: {active_meter_override}")
                 else:
                     print("Config changed on server, reloading...")
                 
+                # Restore CWD before reload - spectrum may have changed it to its template directory
+                os.chdir(peppymeter_path)
                 setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override)
                 pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
                                quit_pygame_on_stop=False)
