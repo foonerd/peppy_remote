@@ -769,14 +769,41 @@ class SMBMount:
 # Level Data Receiver
 # =============================================================================
 class LevelReceiver:
-    """Receives audio level data over UDP."""
+    """
+    Receives audio level data over UDP.
     
-    def __init__(self, server_ip, port=5580):
+    Protocol v2 features:
+    - Sends registration packet to server on startup
+    - Sends periodic heartbeat packets to maintain connection
+    - Sends unregister packet on clean shutdown
+    
+    This allows the server to track connected clients for diagnostics
+    while remaining backward compatible (server still broadcasts to all).
+    """
+    
+    CLIENT_VERSION = 2  # Protocol version
+    HEARTBEAT_INTERVAL = 30  # seconds between heartbeats
+    
+    def __init__(self, server_ip, port=5580, client_id=None, subscriptions=None):
         self.server_ip = server_ip
         self.port = port
         self.sock = None
         self._running = False
         self._thread = None
+        self._heartbeat_thread = None
+        
+        # Generate unique client_id if not provided
+        if client_id:
+            self.client_id = client_id
+        else:
+            # Use hostname + random suffix for uniqueness
+            hostname = socket.gethostname()
+            import uuid
+            suffix = uuid.uuid4().hex[:6]
+            self.client_id = f"{hostname}-{suffix}"
+        
+        # What data streams this client subscribes to
+        self.subscriptions = subscriptions or ['meters']
         
         # Current level data (thread-safe via GIL for simple reads)
         self.left = 0.0
@@ -784,6 +811,55 @@ class LevelReceiver:
         self.mono = 0.0
         self.seq = 0
         self.last_update = 0
+    
+    def _send_registration(self):
+        """Send registration packet to server."""
+        if not self.sock or not self.server_ip:
+            return
+        try:
+            msg = json.dumps({
+                'type': 'register',
+                'client_id': self.client_id,
+                'version': self.CLIENT_VERSION,
+                'subscribe': self.subscriptions
+            }).encode('utf-8')
+            self.sock.sendto(msg, (self.server_ip, self.port))
+            print(f"  Registered with server as '{self.client_id}' (v{self.CLIENT_VERSION})")
+        except Exception as e:
+            print(f"  Registration failed: {e}")
+    
+    def _send_heartbeat(self):
+        """Send heartbeat packet to server."""
+        if not self.sock or not self.server_ip:
+            return
+        try:
+            msg = json.dumps({
+                'type': 'heartbeat',
+                'client_id': self.client_id
+            }).encode('utf-8')
+            self.sock.sendto(msg, (self.server_ip, self.port))
+        except Exception:
+            pass  # Heartbeat failures are silent
+    
+    def _send_unregister(self):
+        """Send unregister packet to server on clean shutdown."""
+        if not self.sock or not self.server_ip:
+            return
+        try:
+            msg = json.dumps({
+                'type': 'unregister',
+                'client_id': self.client_id
+            }).encode('utf-8')
+            self.sock.sendto(msg, (self.server_ip, self.port))
+        except Exception:
+            pass  # Unregister failures are silent
+    
+    def _heartbeat_loop(self):
+        """Background thread to send periodic heartbeats."""
+        while self._running:
+            time.sleep(self.HEARTBEAT_INTERVAL)
+            if self._running:
+                self._send_heartbeat()
     
     def start(self):
         """Start receiving level data in background thread."""
@@ -793,6 +869,15 @@ class LevelReceiver:
         self.sock.bind(('', self.port))
         
         self._running = True
+        
+        # Send registration to server
+        self._send_registration()
+        
+        # Start heartbeat thread
+        self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self._heartbeat_thread.start()
+        
+        # Start receive thread
         self._thread = threading.Thread(target=self._receive_loop, daemon=True)
         self._thread.start()
         print(f"Level receiver started on UDP port {self.port}")
@@ -818,11 +903,16 @@ class LevelReceiver:
     
     def stop(self):
         """Stop receiving."""
+        # Send unregister before stopping
+        self._send_unregister()
+        
         self._running = False
         if self.sock:
             self.sock.close()
         if self._thread:
             self._thread.join(timeout=2.0)
+        if self._heartbeat_thread:
+            self._heartbeat_thread.join(timeout=2.0)
     
     def get_levels(self):
         """Get current level data as tuple (left, right, mono)."""
@@ -1993,11 +2083,15 @@ def main():
     if server_info.get('config_version'):
         print(f"Server config version: {server_info['config_version']}")
     
-    # Start level receiver
-    level_receiver = LevelReceiver(server_info['ip'], server_info['level_port'])
+    # Start level receiver with registration for both data streams
+    level_receiver = LevelReceiver(
+        server_info['ip'], 
+        server_info['level_port'],
+        subscriptions=['meters', 'spectrum']  # Register interest in both streams
+    )
     level_receiver.start()
     
-    # Start spectrum receiver
+    # Start spectrum receiver (no registration needed, handled by level_receiver)
     spectrum_port = server_info.get('spectrum_port', config['server'].get('spectrum_port', 5581))
     spectrum_receiver = SpectrumReceiver(server_info['ip'], spectrum_port)
     spectrum_receiver.start()
