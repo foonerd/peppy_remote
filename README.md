@@ -52,6 +52,9 @@ This opens an interactive menu where you can configure:
 - Display mode (windowed, frameless, fullscreen)
 - Window position
 - Template source (SMB or local)
+- Spectrum templates path (local override)
+- Spectrum decay rate (bar fall speed)
+- Debug level and trace options
 
 Settings are saved to `~/peppy_remote/config.json` and persist between runs.
 
@@ -76,7 +79,7 @@ Settings are stored in `~/peppy_remote/config.json`:
 ```json
 {
   "server": {
-    "host": null,           // null = auto-discover
+    "host": null,
     "level_port": 5580,
     "spectrum_port": 5581,
     "volumio_port": 3000,
@@ -84,19 +87,56 @@ Settings are stored in `~/peppy_remote/config.json`:
     "discovery_timeout": 10
   },
   "display": {
-    "windowed": true,       // true = movable window
-    "position": null,       // null = centered, or [x, y]
+    "windowed": true,
+    "position": null,
     "fullscreen": false,
     "monitor": 0
   },
   "templates": {
     "use_smb": true,
-    "local_path": null
+    "local_path": null,
+    "spectrum_local_path": null
+  },
+  "spectrum": {
+    "decay_rate": 0.95
+  },
+  "debug": {
+    "level": "off",
+    "trace_spectrum": false,
+    "trace_network": false,
+    "trace_config": false
   }
 }
 ```
 
-Command-line arguments override config file settings.
+### Configuration Options
+
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| server | host | null | Server hostname/IP (null = auto-discover) |
+| server | level_port | 5580 | UDP port for meter level data |
+| server | spectrum_port | 5581 | UDP port for spectrum FFT data |
+| templates | use_smb | true | Mount templates from server via SMB |
+| templates | local_path | null | Local meter templates path |
+| templates | spectrum_local_path | null | Local spectrum templates path |
+| spectrum | decay_rate | 0.95 | Bar decay per frame (0.85=fast, 0.98=slow) |
+| debug | level | "off" | Debug level: off/basic/verbose/trace |
+| debug | trace_spectrum | false | Log per-packet spectrum data |
+| debug | trace_network | false | Log network connection details |
+
+Command-line arguments override config file settings:
+
+```bash
+# Debugging
+~/peppy_remote/peppy_remote --debug verbose
+~/peppy_remote/peppy_remote --debug trace --trace-spectrum
+
+# Spectrum tuning
+~/peppy_remote/peppy_remote --decay-rate 0.97
+
+# Local templates (skip SMB)
+~/peppy_remote/peppy_remote --templates /path/to/templates --spectrum-templates /path/to/spectrum
+```
 
 ## Requirements
 
