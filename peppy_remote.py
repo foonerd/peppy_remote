@@ -741,9 +741,14 @@ class PersistManager:
     
     def update_settings(self, persist_duration, persist_display):
         """Update persist settings (e.g., when server config changes)."""
-        self.persist_duration = int(persist_duration or 0)
-        self.persist_display = persist_display or "freeze"
-        log_client(f"Persist settings updated: duration={self.persist_duration}s, mode={self.persist_display}", "verbose")
+        new_duration = int(persist_duration or 0)
+        new_display = persist_display or "freeze"
+        
+        # Only log if settings actually changed
+        if new_duration != self.persist_duration or new_display != self.persist_display:
+            self.persist_duration = new_duration
+            self.persist_display = new_display
+            log_client(f"Persist settings updated: duration={self.persist_duration}s, mode={self.persist_display}", "verbose")
     
     def check_metadata_status(self, metadata_dict):
         """
