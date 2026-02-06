@@ -78,6 +78,7 @@ Settings are stored in `~/peppy_remote/config.json`:
   "server": {
     "host": null,           // null = auto-discover
     "level_port": 5580,
+    "spectrum_port": 5581,
     "volumio_port": 3000,
     "discovery_port": 5579,
     "discovery_timeout": 10
@@ -103,6 +104,16 @@ Command-line arguments override config file settings.
 - Network access to Volumio box
 - Volumio must have PeppyMeter plugin with "Remote Display Server" enabled
 
+## Network Ports
+
+| Port | Protocol | Direction | Purpose |
+|------|----------|-----------|---------|
+| 5579 | UDP | Server → Client | Discovery broadcasts |
+| 5580 | UDP | Server → Client | Audio level data (~30/sec) |
+| 5581 | UDP | Server → Client | Spectrum FFT data (~30/sec) |
+| 3000 | TCP | Client → Server | Volumio socket.io (metadata) |
+| 445 | TCP | Client → Server | SMB (templates) |
+
 ## How It Works
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
@@ -112,7 +123,9 @@ Command-line arguments override config file settings.
    - Endpoint: `/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig`
 3. **Templates**: Mounts template skins from server via SMB
 4. **Audio Levels**: Receives real-time level data via UDP (port 5580)
-5. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, indicators)
+5. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations
+6. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art, playback state
+7. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators)
 
 ## Installation Structure
 
@@ -144,6 +157,21 @@ Command-line arguments override config file settings.
 ├── venv/                 # Python virtual environment
 └── config.json           # Client configuration
 ```
+
+## Format Icons
+
+The client displays format icons (FLAC, MP3, Tidal, Qobuz, etc.) for the currently playing track.
+
+**How it works:**
+1. The installer downloads common format icons to `screensaver/format-icons/`
+2. At startup, the client checks for any missing icons
+3. Missing icons are fetched from Volumio server (`/app/assets-common/format-icons/`) and cached locally
+4. Handler files are patched to check local icons first for all formats
+
+**Bundled icons:**
+`aac`, `aiff`, `airplay`, `alac`, `bt`, `cd`, `dab`, `dsd`, `dts`, `flac`, `fm`, `m4a`, `mp3`, `mp4`, `mqa`, `ogg`, `opus`, `qobuz`, `radio`, `rr`, `spotify`, `tidal`, `wav`, `wavpack`, `wma`, `youtube`
+
+If a format icon isn't available locally or on the server, the format name is displayed as text.
 
 ## Server Setup
 
@@ -192,6 +220,12 @@ System packages are NOT removed (python3, SDL2, etc.).
 - Check server is broadcasting: `nc -ul 5580`
 - Verify music is playing on Volumio
 - Check firewall allows UDP 5580
+
+**No spectrum data:**
+- Check server is broadcasting spectrum: `nc -ul 5581`
+- Verify spectrum is enabled in PeppyMeter settings
+- Check firewall allows UDP 5581
+- Spectrum requires peppyalsa to be running on server
 
 **Import errors:**
 - Verify screensaver directory exists: `ls ~/peppy_remote/screensaver/`
