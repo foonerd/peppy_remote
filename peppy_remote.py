@@ -736,6 +736,13 @@ class SpectrumReceiver:
         while self._running:
             try:
                 data, addr = self.sock.recvfrom(1024)
+                source_ip = addr[0]
+                
+                # FILTER: Only accept packets from our configured server
+                # This prevents interference from other Volumio instances on the network
+                if source_ip != self.server_ip:
+                    continue
+                
                 if len(data) >= 6:  # Minimum: uint32 + uint16
                     # Unpack header
                     seq, size = struct.unpack('<IH', data[:6])
@@ -753,7 +760,7 @@ class SpectrumReceiver:
                         
                         # Log first successful packet
                         if not self._first_packet_logged:
-                            print(f"Spectrum receiver: first packet - {size} bins")
+                            print(f"Spectrum receiver: first packet from {source_ip} - {size} bins")
                             self._first_packet_logged = True
                             
             except socket.timeout:
@@ -867,7 +874,9 @@ class RemoteSpectrumOutput:
         self._initialized = False
         self._fade_in_done = False
         self._fade_factor = 0.0
-        self._smooth_bins = None  # For smoothing transitions
+        self._last_packet_seq = -1  # Track last processed packet
+        self._local_bins = None  # Local copy for decay between packets
+        self._decay_rate = 0.85  # Decay multiplier per frame (0.85 = fast drop)
         
         # Get spectrum config from meter section
         from volumio_configfileparser import SPECTRUM, SPECTRUM_SIZE, SPECTRUM_POS
@@ -1018,34 +1027,80 @@ class RemoteSpectrumOutput:
         
         # Get bar heights from network
         bins = self.spectrum_receiver.get_bins()
-        if not bins:
+        current_seq = self.spectrum_receiver.seq
+        
+        # Initialize local bins on first data (match the spectrum's bar count)
+        if self._local_bins is None and hasattr(self.sp, '_prev_bar_heights'):
+            self._local_bins = [0.0] * len(self.sp._prev_bar_heights)
+        
+        if not self._local_bins:
             return
         
-        # No smoothing - use raw values from server (server already applies smoothing)
-        # The server's Spectrum object processes FFT data with its own timing
+        # Check if we have new packet data
+        new_packet = bins and current_seq != self._last_packet_seq
         
         
-        # Inject bar heights using Spectrum's set_bar_y method
-        # The server sends processed bar heights, so we can use them directly
-        num_bars = min(len(bins), len(self.sp._prev_bar_heights))
+        # SMOOTH ANIMATION LOGIC:
+        # 1. Always decay local bins (bars fall naturally)
+        # 2. Only push bars UP when server sends genuinely NEW higher values
+        # 3. Ignore repeated/stale server data so decay can work
         
+        num_bars = min(len(self._local_bins), len(self.sp._prev_bar_heights))
+        
+        # Track previous server data to detect actual changes
+        if not hasattr(self, '_prev_server_bins'):
+            self._prev_server_bins = None
+        
+        # Check if server sent genuinely different data (not just repeated)
+        server_data_changed = False
+        if bins and self._prev_server_bins:
+            # Consider it "changed" if ANY bin differs by more than 1
+            for i in range(min(len(bins), len(self._prev_server_bins))):
+                if abs(bins[i] - self._prev_server_bins[i]) > 1:
+                    server_data_changed = True
+                    break
+        elif bins and not self._prev_server_bins:
+            server_data_changed = True  # First data
+        
+        if bins:
+            self._prev_server_bins = bins.copy()
+        
+        # Step 1: Apply decay to all local bins (ALWAYS)
         for i in range(num_bars):
-            new_height = bins[i]
+            self._local_bins[i] *= self._decay_rate
+            if self._local_bins[i] < 0.5:
+                self._local_bins[i] = 0
+        
+        # Step 2: Only use server data when it's genuinely NEW and HIGHER
+        if bins and server_data_changed:
+            num_to_copy = min(len(bins), num_bars)
+            for i in range(num_to_copy):
+                server_val = bins[i]
+                if server_val > self._local_bins[i]:
+                    self._local_bins[i] = server_val  # Instant rise to peak
+        
+        # Step 3: Update visual components
+        for i in range(num_bars):
+            new_height = self._local_bins[i]
+            
             # Fade in effect on first data
             if not self._fade_in_done:
                 new_height *= self._fade_factor
             
-            # Use Spectrum's proper set_bar_y method (1-based index)
-            idx = i + 1
+            idx = i + 1  # 1-based index for Spectrum methods
+            
+            # Force update by setting prev to different value (bypass optimization)
+            self.sp._prev_bar_heights[i] = new_height + 100
+            
             try:
                 self.sp.set_bar_y(idx, new_height)
-                # Also update reflection and topping if they exist
                 if hasattr(self.sp, 'set_reflection_y'):
                     self.sp.set_reflection_y(idx, new_height)
                 if hasattr(self.sp, 'set_topping_y'):
                     self.sp.set_topping_y(idx, new_height)
-            except (IndexError, AttributeError):
-                pass  # Silently ignore index errors
+            except Exception:
+                pass
+        
         
         # Gradual fade-in
         if not self._fade_in_done:
