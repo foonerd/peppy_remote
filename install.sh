@@ -118,8 +118,8 @@ echo ""
 
 NEEDED_PKGS=""
 
-# Check each package
-for pkg in python3 python3-pip python3-venv git cifs-utils \
+# Check each package (python3-tk for GUI setup wizard)
+for pkg in python3 python3-pip python3-venv python3-tk git cifs-utils \
            libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0; do
     if ! dpkg -s "$pkg" &> /dev/null; then
         NEEDED_PKGS="$NEEDED_PKGS $pkg"
@@ -158,12 +158,14 @@ chmod +x "$INSTALL_DIR/peppy_remote.py"
 curl -sSL "$REPO_URL/raw/$REPO_BRANCH/uninstall.sh" -o "$INSTALL_DIR/uninstall.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
-# Download icon
+# Download icons
 curl -sSL "$REPO_URL/raw/$REPO_BRANCH/peppy_remote.svg" -o "$INSTALL_DIR/peppy_remote.svg"
+curl -sSL "$REPO_URL/raw/$REPO_BRANCH/peppy_remote_config.svg" -o "$INSTALL_DIR/peppy_remote_config.svg"
 
 echo "  Downloaded: peppy_remote.py"
 echo "  Downloaded: uninstall.sh"
 echo "  Downloaded: peppy_remote.svg"
+echo "  Downloaded: peppy_remote_config.svg"
 
 # =============================================================================
 # Create screensaver directory structure (mirrors Volumio plugin layout)
@@ -449,9 +451,10 @@ if [ -d "$HOME/Desktop" ] || [ -d "$HOME/.local/share/applications" ]; then
     echo ""
     echo "Creating desktop shortcuts..."
     
-    # Install icon to standard location
+    # Install icons to standard location (main + config with wrench badge)
     mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
     cp "$INSTALL_DIR/peppy_remote.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/peppy-remote.svg"
+    cp "$INSTALL_DIR/peppy_remote_config.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/peppy-remote-config.svg"
     
     # Main launcher (windowed mode, no terminal - starts directly)
     DESKTOP_FILE="[Desktop Entry]
@@ -465,14 +468,14 @@ Categories=AudioVideo;Audio;
 StartupWMClass=PeppyMeter
 "
     
-    # Configuration launcher (needs terminal for interactive wizard)
+    # Configuration launcher (opens GUI wizard, or terminal wizard if no display)
     DESKTOP_FILE_CONFIG="[Desktop Entry]
 Type=Application
 Name=PeppyMeter Remote (Configure)
 Comment=Configure PeppyMeter Remote Client
 Exec=$INSTALL_DIR/peppy_remote --config
-Icon=peppy-remote
-Terminal=true
+Icon=peppy-remote-config
+Terminal=false
 Categories=AudioVideo;Audio;Settings;
 "
     
@@ -481,7 +484,7 @@ Categories=AudioVideo;Audio;Settings;
         echo "$DESKTOP_FILE_CONFIG" > "$HOME/.local/share/applications/peppy-remote-config.desktop"
         echo "  Created: peppy-remote.desktop (main launcher)"
         echo "  Created: peppy-remote-config.desktop (configuration)"
-        echo "  Installed icon: peppy-remote.svg"
+        echo "  Installed icons: peppy-remote.svg, peppy-remote-config.svg"
         
         # Update icon cache if available
         if command -v gtk-update-icon-cache > /dev/null 2>&1; then
