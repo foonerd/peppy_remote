@@ -24,7 +24,9 @@ $ScreensaverRepoUrl = "https://github.com/foonerd/peppy_screensaver"
 $PeppymeterRepo = "https://github.com/foonerd/PeppyMeter"
 $SpectrumRepo = "https://github.com/foonerd/PeppySpectrum"
 
-$InstallDir = if ($Dir) { $Dir } else { Join-Path $env:USERPROFILE "peppy_remote" }
+# USERPROFILE is Windows; use HOME on Linux (e.g. for testing with pwsh)
+$profileDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+$InstallDir = if ($Dir) { $Dir } else { Join-Path $profileDir "peppy_remote" }
 
 $AllIcons = "'aac', 'aiff', 'airplay', 'alac', 'bt', 'cd', 'dab', 'dsd', 'dts', 'flac', 'fm', 'm4a', 'mp3', 'mp4', 'mqa', 'ogg', 'opus', 'qobuz', 'radio', 'rr', 'spotify', 'tidal', 'wav', 'wavpack', 'wma', 'youtube'"
 
@@ -231,8 +233,14 @@ $venvPath = Join-Path $InstallDir "venv"
 if (-not (Test-Path $venvPath)) {
     Invoke-Expression "$py -m venv `"$venvPath`""
 }
-$pip = Join-Path $InstallDir "venv\Scripts\pip.exe"
-$pythonExe = Join-Path $InstallDir "venv\Scripts\python.exe"
+# Windows: venv\Scripts\pip.exe; Linux/macOS (e.g. pwsh test): venv/bin/pip
+# $IsWindows is read-only in PowerShell Core; Windows PS 5.1 has $env:OS = "Windows_NT"
+$isWin = if ($null -ne $IsWindows) { $IsWindows } else { $env:OS -eq "Windows_NT" }
+$venvBin = if ($isWin) { "Scripts" } else { "bin" }
+$pipName = if ($isWin) { "pip.exe" } else { "pip" }
+$pythonName = if ($isWin) { "python.exe" } else { "python" }
+$pip = Join-Path $InstallDir (Join-Path "venv" (Join-Path $venvBin $pipName))
+$pythonExe = Join-Path $InstallDir (Join-Path "venv" (Join-Path $venvBin $pythonName))
 & $pip install --upgrade pip wheel -q 2>$null
 $packages = @(
     "pillow", "pygame", "cairosvg", "cssselect2", "tinycss2", "defusedxml", "webencodings",
