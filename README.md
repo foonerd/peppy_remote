@@ -20,9 +20,67 @@ curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh
 
 On desktop systems, the installer adds two launchers: **PeppyMeter Remote** (start client) and **PeppyMeter Remote (Configure)** (wrench icon, opens the setup wizard).
 
+### Windows
+
+**Prerequisites:** Windows 10 or 11. The installer needs **Python 3.8+** and **Git**. If either is missing, the script will check, list what’s missing, and ask: *“Install missing dependencies via winget? [Y/n]”*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
+
+**First-time PowerShell:** You may need to allow script execution once:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**One-liner install:**
+
+```powershell
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex
+```
+
+**With options** (pass after the one-liner):
+
+```powershell
+# Pre-configure server hostname or IP
+irm ... | iex -ArgumentList '-Server','volumio'
+
+# Custom install directory (default is your user profile\peppy_remote)
+irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
+
+# Help
+irm ... | iex -ArgumentList '-Help'
+```
+
+**What the installer does:**
+
+1. **Dependencies:** Checks for Python 3.8+ and Git. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
+2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the repo.
+4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`.
+5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
+6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
+7. **Launchers:** Creates `peppy_remote.cmd` and `peppy_remote.ps1` (both set PYTHONPATH and run the client). Optional Desktop and Start Menu shortcuts: **PeppyMeter Remote** (runs client) and **PeppyMeter Remote (Configure)** (opens setup wizard).
+8. **Config:** Writes `config.json`; use `-Server` to pre-fill the server host.
+
+**Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). You can also choose “local” in the wizard and point to a folder on your PC.
+
+**Running the client on Windows:**
+
+```powershell
+# From the install folder (e.g. %USERPROFILE%\peppy_remote)
+.\peppy_remote.cmd
+.\peppy_remote.cmd --windowed
+.\peppy_remote.cmd --config
+.\peppy_remote.cmd --server volumio
+.\peppy_remote.cmd --test
+.\peppy_remote.cmd --config-text
+```
+
+Or double-click **PeppyMeter Remote** (or **PeppyMeter Remote (Configure)**) on the Desktop or in Start Menu if shortcuts were created.
+
+**Uninstall (Windows):** From the install folder run `.\uninstall.ps1`. It removes the install directory and Desktop/Start Menu shortcuts. To uninstall from another location: `.\uninstall.ps1 -Dir "C:\Users\You\peppy_remote"`. Python and Git are **not** removed.
+
 ## Usage
 
-After installation, run:
+After installation, run (on Linux use `~/peppy_remote/peppy_remote`; on Windows use `.\peppy_remote.cmd` from the install folder, e.g. `%USERPROFILE%\peppy_remote`):
 
 ```bash
 # Auto-discover server on network
@@ -153,10 +211,11 @@ Command-line arguments override config file settings:
 
 ## Requirements
 
-- Debian-based Linux (Ubuntu, Raspberry Pi OS, etc.)
+- **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.)
+- **Windows** (optional): Windows 10/11, Python 3.8+, Git; templates use UNC paths (no SMB mount)
 - Network access to Volumio box
 - Volumio must have PeppyMeter plugin with "Remote Display Server" enabled
-- For the **GUI setup wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
+- **Linux GUI wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
 
 ## Network Ports
 
@@ -240,16 +299,21 @@ On your Volumio box:
 
 ## Uninstall
 
+**Linux:**
+
 ```bash
 ~/peppy_remote/uninstall.sh
 ```
 
-This removes:
-- Installation directory (`~/peppy_remote`)
-- Sudoers entry for mount
-- Desktop launchers (main and Configure)
+Removes: install directory, sudoers entry for mount, desktop launchers. System packages are NOT removed.
 
-System packages are NOT removed (python3, python3-tk, SDL2, etc.).
+**Windows:** Run from the install folder (or pass `-Dir`):
+
+```powershell
+.\uninstall.ps1
+```
+
+Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are NOT removed.
 
 ## Troubleshooting
 
@@ -291,6 +355,24 @@ System packages are NOT removed (python3, python3-tk, SDL2, etc.).
 - Check X11 is running: `xdpyinfo`
 - Try: `export DISPLAY=:0` before running
 
-**Config wizard opens in terminal instead of GUI:**
+**Config wizard opens in terminal instead of GUI (Linux):**
 - Install `python3-tk`: `sudo apt install python3-tk`
 - Ensure you have a display (not SSH without X forwarding). To force the text wizard: `~/peppy_remote/peppy_remote --config-text`
+
+**Windows – Dependencies not found after winget install:**
+- Close this PowerShell window, open a **new** PowerShell, then run the install script again so the updated PATH (Python/Git) is visible.
+- If winget is missing, install [App Installer](https://apps.microsoft.com/store/detail/app-installer/9NBLGGH4NNS1) from Microsoft Store (includes winget on Windows 11), or install Python and Git manually from [python.org](https://www.python.org/downloads/) and [git-scm.com](https://git-scm.com/download/win).
+
+**Windows – Execution policy / script won’t run:**
+- Run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+- Or download `install.ps1` and run: `powershell -ExecutionPolicy Bypass -File install.ps1`
+
+**Windows – Templates / meter skins not loading:**
+- On Windows the client uses **UNC paths** to the Volumio SMB share (no local mount). Ensure Volumio SMB is enabled and the share is reachable: in File Explorer try `\\volumio\Internal Storage` or `\\<volumio_ip>\Internal Storage`.
+- If UNC fails, use the config wizard and choose **local** templates; copy `Internal Storage\peppy_screensaver\templates` (and `templates_spectrum`) from the server to a folder on your PC and point the wizard to that folder.
+- Check Windows Firewall allows SMB (File and Printer Sharing) for the relevant network profile.
+
+**Windows – “No servers found”:**
+- Ensure the Volumio machine and Windows PC are on the same network. Try: `ping volumio.local` or `ping <volumio_ip>`.
+- Run with a fixed server: `.\peppy_remote.cmd --server <volumio_ip_or_hostname>`.
+- Windows Firewall may block UDP discovery; allow the client (or Python) for Private networks if needed.
