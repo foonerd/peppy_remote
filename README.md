@@ -18,6 +18,8 @@ With server pre-configured:
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server volumio
 ```
 
+On desktop systems, the installer adds two launchers: **PeppyMeter Remote** (start client) and **PeppyMeter Remote (Configure)** (wrench icon, opens the setup wizard).
+
 ## Usage
 
 After installation, run:
@@ -33,13 +35,16 @@ After installation, run:
 # Simple test display (VU bars only, no full PeppyMeter)
 ~/peppy_remote/peppy_remote --test
 
-# Interactive configuration wizard
+# Interactive configuration wizard (GUI when display available)
 ~/peppy_remote/peppy_remote --config
+
+# Configuration wizard in terminal (text) only
+~/peppy_remote/peppy_remote --config-text
 ```
 
 ## Configuration
 
-### Interactive Wizard (Recommended)
+### Setup Wizard (Recommended)
 
 Run the configuration wizard for easy setup:
 
@@ -47,13 +52,21 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config
 ```
 
-This opens an interactive menu where you can configure:
-- Server connection (auto-discover or manual)
-- Display mode (windowed, frameless, fullscreen)
-- Window position
-- Template source (SMB or local)
-- Spectrum templates path (local override)
-- Spectrum decay rate (bar fall speed)
+- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → Spectrum decay → Logger/debug → Save & Run or Save & Exit.
+- **Without a display** (e.g. SSH): Falls back to the **terminal (text) wizard** in the same session.
+- **Terminal-only wizard:** Use `--config-text` to force the text-based wizard and skip the GUI:
+
+```bash
+~/peppy_remote/peppy_remote --config-text
+```
+
+On first run, if you launch from a desktop shortcut, the GUI wizard opens automatically.
+
+The wizard configures:
+- Server (auto-discover, enter hostname, or enter IP; after discovery you can choose “Use hostname” or “Use IP address” for the selected server)
+- Display mode (windowed, fullscreen)
+- Template sources (SMB mount or local paths with optional Browse)
+- Spectrum decay rate
 - Debug level and trace options
 
 Settings are saved to `~/peppy_remote/config.json` and persist between runs.
@@ -143,6 +156,7 @@ Command-line arguments override config file settings:
 - Debian-based Linux (Ubuntu, Raspberry Pi OS, etc.)
 - Network access to Volumio box
 - Volumio must have PeppyMeter plugin with "Remote Display Server" enabled
+- For the **GUI setup wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
 
 ## Network Ports
 
@@ -233,9 +247,9 @@ On your Volumio box:
 This removes:
 - Installation directory (`~/peppy_remote`)
 - Sudoers entry for mount
-- Desktop shortcut
+- Desktop launchers (main and Configure)
 
-System packages are NOT removed (python3, SDL2, etc.).
+System packages are NOT removed (python3, python3-tk, SDL2, etc.).
 
 ## Troubleshooting
 
@@ -276,3 +290,7 @@ System packages are NOT removed (python3, SDL2, etc.).
 - Ensure DISPLAY environment variable is set: `echo $DISPLAY`
 - Check X11 is running: `xdpyinfo`
 - Try: `export DISPLAY=:0` before running
+
+**Config wizard opens in terminal instead of GUI:**
+- Install `python3-tk`: `sudo apt install python3-tk`
+- Ensure you have a display (not SSH without X forwarding). To force the text wizard: `~/peppy_remote/peppy_remote --config-text`
