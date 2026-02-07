@@ -987,6 +987,7 @@ class ConfigVersionListener(threading.Thread):
         self.server_ip = server_ip  # if set, only accept packets from this IP
         self.reload_requested = False
         self.new_active_meter = None  # Set when active_meter changes (for config update)
+        self.first_announcement_received = False  # True after first valid UDP packet (for sync screen)
         self._stop = False
         self._sock = None
 
@@ -1008,6 +1009,11 @@ class ConfigVersionListener(threading.Thread):
                     info = json.loads(data.decode('utf-8'))
                     if info.get('service') != 'peppy_level_server':
                         continue
+                    
+                    # Mark that we've received at least one announcement (for "waiting for server" screen)
+                    self.first_announcement_received = True
+                    if info.get('active_meter'):
+                        self.new_active_meter = info.get('active_meter')
                     
                     # Check config_version change (file-based config changes)
                     new_version = info.get('config_version', '')
@@ -2170,6 +2176,62 @@ class RemoteSpectrumOutput:
 
 
 # =============================================================================
+# Parse server config to get (meter_folder, chosen_meter) without writing
+# =============================================================================
+def parse_server_meter_state(config_content, templates_path, active_meter_override=None):
+    """
+    Parse server config content and return (meter_folder, chosen_meter) that would be used.
+    Does not write any files. Uses same rules as setup_remote_config for chosen_meter.
+    Used to compare with current theme before deciding to restart on config change.
+    """
+    import configparser
+    from io import StringIO
+
+    if not config_content:
+        return '', 'random'
+
+    config = configparser.ConfigParser()
+    try:
+        config.read_file(StringIO(config_content))
+    except Exception:
+        return '', 'random'
+
+    if 'current' not in config:
+        return '', 'random'
+
+    meter_folder = config['current'].get('meter.folder', '')
+    meter_value = config['current'].get('meter', '')
+
+    chosen_meter = None
+    if active_meter_override:
+        meters_file = os.path.join(templates_path, meter_folder, 'meters.txt') if meter_folder else ''
+        if meters_file and os.path.exists(meters_file):
+            try:
+                meters_cfg = configparser.ConfigParser()
+                meters_cfg.read(meters_file)
+                if active_meter_override in meters_cfg.sections():
+                    chosen_meter = active_meter_override
+                else:
+                    chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
+            except Exception:
+                chosen_meter = active_meter_override
+        else:
+            chosen_meter = active_meter_override
+    elif not meter_value and meter_folder:
+        chosen_meter = meter_folder
+    elif not meter_value:
+        chosen_meter = 'random'
+    else:
+        chosen_meter = meter_value
+
+    final_meter = chosen_meter or meter_folder or 'random'
+    if not final_meter:
+        final_meter = config['current'].get('meter.folder', 'random') or 'random'
+
+    return meter_folder, final_meter
+
+
+# =============================================================================
 # Setup Remote Config
 # =============================================================================
 def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override=None):
@@ -2309,19 +2371,20 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
         fallback = config['current'].get('meter.folder', 'random')
         config['current']['meter'] = fallback
         log_client(f"Config missing 'meter', using fallback: {fallback}", "verbose")
-    
+        final_meter = fallback
+
+    final_meter_folder = config['current'].get('meter.folder', '')
+
     with open(config_path, 'w') as f:
         config.write(f)
         f.flush()
         os.fsync(f.fileno())  # Force write to disk
-    
+
     if server_config_fetched:
-        meter_folder = config['current'].get('meter.folder', 'unknown')
-        meter_value = config['current'].get('meter', 'MISSING')
-        print(f"  Config adjusted for local use (meter: {meter_folder})")
-        log_client(f"Config written: meter.folder={meter_folder}, meter={meter_value}", "verbose")
-    
-    return config_path
+        print(f"  Config adjusted for local use (meter: {final_meter_folder})")
+        log_client(f"Config written: meter.folder={final_meter_folder}, meter={final_meter}", "verbose")
+
+    return config_path, final_meter, final_meter_folder
 
 
 # =============================================================================
@@ -2369,7 +2432,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                        server_info.get('volumio_port', 3000))
     
     # Fetch and setup config BEFORE any imports that might read it
-    config_path = setup_remote_config(peppymeter_path, templates_path, config_fetcher)
+    config_path, initial_chosen_meter, initial_meter_folder = setup_remote_config(
+        peppymeter_path, templates_path, config_fetcher
+    )
     
     # Set SDL environment for desktop BEFORE pygame import
     # This prevents volumio_peppymeter's init_display from setting framebuffer mode
@@ -2415,7 +2480,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         # Note: peppymeter.peppymeter because Peppymeter class is in peppymeter/peppymeter.py
         from peppymeter.peppymeter import Peppymeter
         from configfileparser import (
-            SCREEN_INFO, WIDTH, HEIGHT, DEPTH, SDL_ENV, DOUBLE_BUFFER, SCREEN_RECT
+            SCREEN_INFO, WIDTH, HEIGHT, DEPTH, SDL_ENV, DOUBLE_BUFFER, SCREEN_RECT,
+            METER, METER_FOLDER
         )
         from volumio_configfileparser import Volumio_ConfigFileParser, COLOR_DEPTH
         
@@ -2515,7 +2581,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         pg.font.init()
         
         # Config version listener: detect server config/template changes and reload
-        current_version_holder = {'version': config_fetcher.cached_version or ''}
+        current_version_holder = {
+            'version': config_fetcher.cached_version or '',
+            'active_meter': initial_chosen_meter or '',
+            'active_meter_folder': initial_meter_folder or ''
+        }
         discovery_port = server_info.get('discovery_port', DISCOVERY_PORT)
         version_listener = ConfigVersionListener(
             discovery_port, current_version_holder, server_ip=server_info['ip']
@@ -2549,6 +2619,77 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         
         pm.util.PYGAME_SCREEN = screen
         pm.util.screen_copy = pm.util.PYGAME_SCREEN
+        
+        # Show "Waiting for server" modal until first UDP announcement (or timeout)
+        SYNC_TIMEOUT = 10.0  # seconds
+        sync_start = time.time()
+        font_sync = pg.font.SysFont('sans', min(28, max(18, screen_h // 25)))
+        line1 = font_sync.render("Waiting for data from server", True, (240, 240, 240))
+        line2 = font_sync.render("Please wait a moment.", True, (200, 200, 200))
+        modal_w = min(500, int(screen_w * 0.6))
+        modal_h = 140
+        modal_x = (screen_w - modal_w) // 2
+        modal_y = (screen_h - modal_h) // 2
+        while not version_listener.first_announcement_received and (time.time() - sync_start) < SYNC_TIMEOUT:
+            for ev in pg.event.get():
+                if ev.type == pg.QUIT:
+                    version_listener.stop_listener()
+                    raise SystemExit(0)
+                if ev.type == pg.KEYDOWN and ev.key in (pg.K_ESCAPE, pg.K_q):
+                    version_listener.stop_listener()
+                    raise SystemExit(0)
+            screen.fill((30, 30, 35))
+            pg.draw.rect(screen, (55, 55, 60), (modal_x, modal_y, modal_w, modal_h), border_radius=12)
+            pg.draw.rect(screen, (80, 80, 88), (modal_x, modal_y, modal_w, modal_h), 2, border_radius=12)
+            l1_rect = line1.get_rect(center=(screen_w // 2, modal_y + modal_h // 2 - 22))
+            l2_rect = line2.get_rect(center=(screen_w // 2, modal_y + modal_h // 2 + 18))
+            screen.blit(line1, l1_rect)
+            screen.blit(line2, l2_rect)
+            pg.display.flip()
+            time.sleep(0.05)
+        if version_listener.first_announcement_received and version_listener.new_active_meter:
+            active_meter_override = version_listener.new_active_meter
+            os.chdir(peppymeter_path)
+            config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
+                peppymeter_path, templates_path, config_fetcher, active_meter_override
+            )
+            current_version_holder['active_meter'] = new_chosen_meter or ''
+            current_version_holder['active_meter_folder'] = new_meter_folder or ''
+            pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
+                           quit_pygame_on_stop=False)
+            parser = Volumio_ConfigFileParser(pm.util)
+            meter_config_volumio = parser.meter_config_volumio
+            init_debug_config(meter_config_volumio)
+            pm.data_source = remote_ds
+            if hasattr(pm, 'meter') and pm.meter:
+                pm.meter.data_source = remote_ds
+            callback = CallBack(pm.util, meter_config_volumio, pm.meter)
+            pm.meter.callback_start = callback.peppy_meter_start
+            pm.meter.callback_stop = callback.peppy_meter_stop
+            pm.dependent = callback.peppy_meter_update
+            pm.meter.malloc_trim = callback.trim_memory
+            pm.malloc_trim = callback.exit_trim_memory
+            callback.persist_manager = persist_manager
+            new_screen_w = pm.util.meter_config[SCREEN_INFO][WIDTH]
+            new_screen_h = pm.util.meter_config[SCREEN_INFO][HEIGHT]
+            if (new_screen_w, new_screen_h) != (screen_w, screen_h):
+                new_flags = 0
+                if is_fullscreen:
+                    new_flags |= pg.FULLSCREEN
+                elif not is_windowed:
+                    new_flags |= pg.NOFRAME
+                if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
+                    new_flags |= pg.DOUBLEBUF
+                screen = pg.display.set_mode((new_screen_w, new_screen_h), new_flags, depth)
+                screen_w, screen_h = new_screen_w, new_screen_h
+            pm.util.meter_config[SCREEN_INFO][WIDTH] = screen_w
+            pm.util.meter_config[SCREEN_INFO][HEIGHT] = screen_h
+            pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
+            pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
+            pm.util.PYGAME_SCREEN = screen
+            pm.util.screen_copy = screen
+            version_listener.reload_requested = False
+            version_listener.new_active_meter = None
         
         # Initialize remote spectrum if receiver is provided and spectrum is enabled
         remote_spectrum = None
@@ -2598,7 +2739,43 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             reload_callback_supported = 'check_reload_callback' in _sig.parameters
         except Exception:
             reload_callback_supported = False
-        
+
+        # Cache for "should exit for reload?" so we only fetch once per reload request
+        _reload_check_done = [False]
+        _reload_should_exit = [None]
+
+        def _check_reload_callback():
+            """Return True only when we actually need to reload (folder or theme would change)."""
+            if not version_listener.reload_requested:
+                _reload_check_done[0] = False
+                return False
+            if _reload_check_done[0]:
+                return _reload_should_exit[0]
+            active_meter_override = version_listener.new_active_meter
+            current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
+            current_meter = pm.util.meter_config.get(METER, '') or ''
+            success, config_content, _ = config_fetcher.fetch()
+            if not success or not config_content:
+                _reload_check_done[0] = True
+                _reload_should_exit[0] = True
+                return True
+            new_meter_folder, new_chosen_meter = parse_server_meter_state(
+                config_content, templates_path, active_meter_override
+            )
+            if new_meter_folder == current_folder and new_chosen_meter == current_meter:
+                version_listener.reload_requested = False
+                version_listener.new_active_meter = None
+                current_version_holder['version'] = config_fetcher.cached_version or ''
+                current_version_holder['active_meter'] = new_chosen_meter or current_meter
+                current_version_holder['active_meter_folder'] = new_meter_folder or current_folder
+                _reload_check_done[0] = True
+                _reload_should_exit[0] = False
+                print("Config/folder+theme unchanged, continuing.")
+                return False
+            _reload_check_done[0] = True
+            _reload_should_exit[0] = True
+            return True
+
         try:
             while True:
                 current_version_holder['version'] = config_fetcher.cached_version or ''
@@ -2615,7 +2792,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     start_display_output(pm, callback, meter_config_volumio,
                                         volumio_host=server_info['ip'],
                                         volumio_port=server_info['volumio_port'],
-                                        check_reload_callback=lambda: version_listener.reload_requested)
+                                        check_reload_callback=_check_reload_callback)
                 else:
                     start_display_output(pm, callback, meter_config_volumio,
                                         volumio_host=server_info['ip'],
@@ -2624,8 +2801,25 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     break
                 
                 # Get active_meter override if server sent a new one
-                # Check both the saved pending value and any new value that arrived during display
                 active_meter_override = version_listener.new_active_meter or pending_active_meter
+                
+                # Fallback: if we exited without callback (old volumio_peppymeter), check here
+                current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
+                current_meter = pm.util.meter_config.get(METER, '') or ''
+                success, config_content, _ = config_fetcher.fetch()
+                if success and config_content:
+                    new_meter_folder, new_chosen_meter = parse_server_meter_state(
+                        config_content, templates_path, active_meter_override
+                    )
+                    if (new_meter_folder == current_folder and new_chosen_meter == current_meter):
+                        current_version_holder['version'] = config_fetcher.cached_version or ''
+                        current_version_holder['active_meter'] = new_chosen_meter or current_meter
+                        current_version_holder['active_meter_folder'] = new_meter_folder or current_folder
+                        version_listener.reload_requested = False
+                        version_listener.new_active_meter = None
+                        print("Config/folder+theme unchanged, continuing.")
+                        continue
+                
                 if active_meter_override:
                     print(f"Server active meter changed to: {active_meter_override}")
                 else:
@@ -2633,7 +2827,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 
                 # Restore CWD before reload - spectrum may have changed it to its template directory
                 os.chdir(peppymeter_path)
-                setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override)
+                config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
+                    peppymeter_path, templates_path, config_fetcher, active_meter_override
+                )
+                current_version_holder['active_meter'] = new_chosen_meter or ''
+                current_version_holder['active_meter_folder'] = new_meter_folder or ''
                 pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
                                quit_pygame_on_stop=False)
                 parser = Volumio_ConfigFileParser(pm.util)
