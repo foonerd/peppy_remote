@@ -1446,34 +1446,32 @@ class SMBMount:
             self._mounted = True
             return True
         
-        # Try guest mount first
-        print(f"Mounting {self.share_path} at {self.mount_point}...")
-        
-        # Try guest mount
-        result = subprocess.run(
-            ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
-             '-o', 'guest,ro,nofail'],
-            capture_output=True, text=True
-        )
-        
-        if result.returncode == 0:
-            print("  Mounted as guest")
-            self._mounted = True
-            return True
-        
-        # Try with volumio credentials
-        result = subprocess.run(
-            ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
-             '-o', 'user=volumio,password=volumio,ro,nofail'],
-            capture_output=True, text=True
-        )
-        
-        if result.returncode == 0:
-            print("  Mounted with volumio credentials")
-            self._mounted = True
-            return True
-        
-        print(f"  Failed to mount: {result.stderr}")
+        # Try SMB versions from oldest/fastest to newest (Linux cifs 3.x can be slow)
+        # Order: 2.0, 2.1, 3.0, 3.1.1
+        vers_list = ['2.0', '2.1', '3.0', '3.1.1']
+        for vers in vers_list:
+            opts_guest = f'guest,ro,nofail,vers={vers}'
+            opts_creds = f'user=volumio,password=volumio,ro,nofail,vers={vers}'
+            print(f"Mounting {self.share_path} at {self.mount_point} (SMB {vers})...")
+            result = subprocess.run(
+                ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
+                 '-o', opts_guest],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                print(f"  Mounted as guest (SMB {vers})")
+                self._mounted = True
+                return True
+            result = subprocess.run(
+                ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
+                 '-o', opts_creds],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                print(f"  Mounted with volumio credentials (SMB {vers})")
+                self._mounted = True
+                return True
+        print(f"  Failed to mount (tried SMB {', '.join(vers_list)}): {result.stderr}")
         return False
     
     def unmount(self):
