@@ -1264,6 +1264,25 @@ def _is_ip_address(host):
         return False
 
 
+def _unc_paths_for_windows(server_info):
+    """Build UNC paths for meter/spectrum templates on Windows (no SMB mount).
+    
+    :param server_info: dict with 'ip' and/or 'hostname'
+    :return: (templates_path, spectrum_templates_path) or (None, None) if invalid
+    """
+    if os.name != 'nt':
+        return None, None
+    host = server_info.get('ip') or server_info.get('hostname')
+    if not host:
+        return None, None
+    # UNC: \\host\share\path (backslashes)
+    share_path = SMB_SHARE_PATH.replace('/', '\\')
+    unc_base = '\\\\' + host + '\\' + share_path
+    templates_path = unc_base + '\\templates'
+    spectrum_path = unc_base + '\\templates_spectrum'
+    return templates_path, spectrum_path
+
+
 # =============================================================================
 # Format Icons Manager
 # =============================================================================
@@ -3034,12 +3053,16 @@ def main():
                     print("\nCancelled.")
                     sys.exit(0)
     
-    # SMB mount for templates (if enabled)
+    # SMB mount for templates (Linux only; Windows uses UNC paths)
     smb_mount = None
     if config["templates"]["use_smb"] and not config["templates"]["local_path"]:
-        smb_mount = SMBMount(server_info['hostname'])
-        if not smb_mount.mount():
-            print("WARNING: Could not mount SMB share. Templates may not be available.")
+        if os.name == 'nt':
+            # Windows: use UNC paths, no mount
+            pass
+        else:
+            smb_mount = SMBMount(server_info['hostname'])
+            if not smb_mount.mount():
+                print("WARNING: Could not mount SMB share. Templates may not be available.")
     
     # Config fetcher (uses HTTP to get config from server)
     config_fetcher = ConfigFetcher(server_info['ip'], server_info['volumio_port'])
@@ -3076,6 +3099,13 @@ def main():
     # Determine templates path
     if config["templates"]["local_path"]:
         templates_path = config["templates"]["local_path"]
+    elif config["templates"]["use_smb"] and not config["templates"]["local_path"] and os.name == 'nt':
+        unc_templates, unc_spectrum = _unc_paths_for_windows(server_info)
+        if unc_templates:
+            templates_path = unc_templates
+            config["templates"]["spectrum_local_path"] = unc_spectrum
+        else:
+            templates_path = os.path.join(SCRIPT_DIR, "data", "templates")
     elif smb_mount and smb_mount._mounted:
         templates_path = str(smb_mount.templates_path)
     else:
