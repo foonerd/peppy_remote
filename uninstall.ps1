@@ -28,17 +28,20 @@ if ($reply -notmatch '^[Yy]') {
 Write-Host ""
 Write-Host "Uninstalling..."
 
-# Remove shortcuts
+# Remove shortcuts (Windows only; desktop/startMenu are empty on Linux)
 $desktop = [Environment]::GetFolderPath("Desktop")
 $startMenu = [Environment]::GetFolderPath("StartMenu")
-$shortcuts = @(
-    (Join-Path $desktop "PeppyMeter Remote.lnk"),
-    (Join-Path $desktop "PeppyMeter Remote (Configure).lnk")
-)
-$smDir = Join-Path $startMenu "Programs"
-if (-not (Test-Path $smDir)) { $smDir = $startMenu }
-$shortcuts += (Join-Path $smDir "PeppyMeter Remote.lnk")
-$shortcuts += (Join-Path $smDir "PeppyMeter Remote (Configure).lnk")
+$shortcuts = @()
+if ($desktop) {
+    $shortcuts += (Join-Path $desktop "PeppyMeter Remote.lnk")
+    $shortcuts += (Join-Path $desktop "PeppyMeter Remote (Configure).lnk")
+}
+if ($startMenu) {
+    $smDir = Join-Path $startMenu "Programs"
+    if (-not (Test-Path $smDir)) { $smDir = $startMenu }
+    $shortcuts += (Join-Path $smDir "PeppyMeter Remote.lnk")
+    $shortcuts += (Join-Path $smDir "PeppyMeter Remote (Configure).lnk")
+}
 foreach ($s in $shortcuts) {
     if (Test-Path $s) {
         Remove-Item $s -Force
@@ -50,7 +53,8 @@ foreach ($s in $shortcuts) {
 $pyFile = Join-Path $ScriptDir "peppy_remote.py"
 $cmdFile = Join-Path $ScriptDir "peppy_remote.cmd"
 if ((Test-Path $pyFile) -and (Test-Path $cmdFile)) {
-    Set-Location $env:USERPROFILE
+    $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+    if ($homeDir) { Set-Location $homeDir }
     Remove-Item -Recurse -Force $ScriptDir
     Write-Host "  Removed: $ScriptDir"
 } else {
