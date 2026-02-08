@@ -1394,24 +1394,33 @@ def setup_fonts(screensaver_path, server_ip, volumio_port=3000):
 
 
 def _fetch_font(filename, fonts_dir, server_ip, volumio_port):
-    """Fetch a font from Volumio server. On 404 or error, log and return False."""
+    """Fetch a font from server via plugin endpoint (base64). On error, log and return False."""
     local_path = os.path.join(fonts_dir, filename)
-    url = f"http://{server_ip}:{volumio_port}/app/assets-common/fonts/{filename}"
+    url = f"http://{server_ip}:{volumio_port}/api/v1/pluginEndpoint"
+    body = json.dumps({
+        'endpoint': 'peppy_screensaver_font',
+        'data': {'filename': filename},
+    }).encode('utf-8')
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'PeppyRemote/1.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method='POST',
+            headers={'Content-Type': 'application/json', 'User-Agent': 'PeppyRemote/1.0'},
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            if not data.get('success'):
+                print(f"  Required font missing: {filename}")
+                return False
+            inner = data.get('data', {})
+            if inner.get('success') and inner.get('data'):
+                import base64
                 with open(local_path, 'wb') as f:
-                    f.write(response.read())
+                    f.write(base64.b64decode(inner['data']))
                 return True
             print(f"  Required font missing: {filename}")
             return False
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            print(f"  Required font missing: {filename}")
-        else:
-            print(f"  Required font missing: {filename}")
-        return False
     except Exception:
         print(f"  Required font missing: {filename}")
         return False
