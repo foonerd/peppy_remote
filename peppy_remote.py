@@ -1370,6 +1370,53 @@ def _fetch_format_icon(fmt, icons_dir, server_ip, volumio_port):
     return False
 
 
+# Fonts required by handlers (font.path + light/regular/bold; digi hardcoded as DSEG7Classic-Italic.ttf)
+KNOWN_PEPPY_FONTS = [
+    'Lato-Light.ttf', 'Lato-Regular.ttf', 'Lato-Bold.ttf',
+    'DSEG7Classic-Italic.ttf',
+]
+
+
+def setup_fonts(screensaver_path, server_ip, volumio_port=3000):
+    """Ensure required fonts are available locally. Fetch missing from server.
+    
+    :param screensaver_path: Path to screensaver/ directory
+    :param server_ip: Volumio server IP
+    :param volumio_port: Volumio HTTP port
+    """
+    fonts_dir = os.path.join(screensaver_path, 'fonts')
+    os.makedirs(fonts_dir, exist_ok=True)
+    for filename in KNOWN_PEPPY_FONTS:
+        local_path = os.path.join(fonts_dir, filename)
+        if not os.path.exists(local_path):
+            if not _fetch_font(filename, fonts_dir, server_ip, volumio_port):
+                print(f"  Required font missing: {filename}")
+
+
+def _fetch_font(filename, fonts_dir, server_ip, volumio_port):
+    """Fetch a font from Volumio server. On 404 or error, log and return False."""
+    local_path = os.path.join(fonts_dir, filename)
+    url = f"http://{server_ip}:{volumio_port}/app/assets-common/fonts/{filename}"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'PeppyRemote/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                with open(local_path, 'wb') as f:
+                    f.write(response.read())
+                return True
+            print(f"  Required font missing: {filename}")
+            return False
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"  Required font missing: {filename}")
+        else:
+            print(f"  Required font missing: {filename}")
+        return False
+    except Exception:
+        print(f"  Required font missing: {filename}")
+        return False
+
+
 def _patch_handlers_for_local_icons(screensaver_path):
     """Patch handler files to use expanded local_icons set.
     
@@ -2305,6 +2352,9 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
     
     # Update paths for local client
     config['current']['base.folder'] = templates_path
+    screensaver_path = os.path.dirname(peppymeter_path)
+    fonts_dir = os.path.join(screensaver_path, 'fonts')
+    config['current']['font.path'] = fonts_dir + os.sep
     
     # Ensure 'meter' key exists for upstream peppymeter compatibility
     # Server config has both: meter.folder (folder name) and meter (meter selection)
@@ -2450,6 +2500,10 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     # This must happen BEFORE importing handlers as they check for icons at init time
     setup_format_icons(screensaver_path, server_info['ip'], 
                        server_info.get('volumio_port', 3000))
+    
+    # Ensure required fonts are local; fetch missing from server
+    setup_fonts(screensaver_path, server_info['ip'], 
+                server_info.get('volumio_port', 3000))
     
     # Fetch and setup config BEFORE any imports that might read it
     config_path, initial_chosen_meter, initial_meter_folder = setup_remote_config(

@@ -234,11 +234,23 @@ for file in "${VOLUMIO_FILES[@]}"; do
     curl -sSL "$SCREENSAVER_REPO_URL/raw/$REPO_BRANCH/volumio_peppymeter/$file" -o "$INSTALL_DIR/screensaver/$file"
 done
 
-# Download fonts directory
+# Download fonts from peppy_remote repo (full set for remote client)
 echo "  Downloading fonts..."
 mkdir -p "$INSTALL_DIR/screensaver/fonts"
-for font in DSEG7Classic-Bold.ttf DSEG7Classic-BoldItalic.ttf DSEG7Classic-Italic.ttf DSEG7Classic-Regular.ttf; do
-    curl -sSL "$SCREENSAVER_REPO_URL/raw/$REPO_BRANCH/volumio_peppymeter/fonts/$font" -o "$INSTALL_DIR/screensaver/fonts/$font"
+FONTS=(
+    "DSEG7Classic-Bold.ttf" "DSEG7Classic-BoldItalic.ttf" "DSEG7Classic-Italic.ttf" "DSEG7Classic-Regular.ttf"
+    "fontawesome-webfont.eot" "fontawesome-webfont.svg" "fontawesome-webfont.ttf" "fontawesome-webfont.woff" "fontawesome-webfont.woff2"
+    "FontAwesome.otf"
+    "gibson-bold.ttf" "Gibson-BoldItalic.ttf" "Gibson-Regular.ttf" "Gibson-RegularItalic.ttf"
+    "glyphicons-halflings-regular.eot" "glyphicons-halflings-regular.svg" "glyphicons-halflings-regular.ttf" "glyphicons-halflings-regular.woff" "glyphicons-halflings-regular.woff2"
+    "Lato-Bold.eot" "Lato-Bold.ttf" "Lato-Bold.woff" "Lato-Bold.woff2"
+    "Lato-Light.eot" "Lato-Light.ttf" "Lato-Light.woff" "Lato-Light.woff2"
+    "Lato-Regular.eot" "Lato-Regular.ttf" "Lato-Regular.woff" "Lato-Regular.woff2"
+    "materialdesignicons-webfont.eot" "materialdesignicons-webfont.ttf" "materialdesignicons-webfont.woff" "materialdesignicons-webfont.woff2"
+    "MaterialIcons-Regular.eot" "MaterialIcons-Regular.ttf" "MaterialIcons-Regular.woff" "MaterialIcons-Regular.woff2"
+)
+for font in "${FONTS[@]}"; do
+    curl -sSL "$REPO_URL/raw/$REPO_BRANCH/fonts/$font" -o "$INSTALL_DIR/screensaver/fonts/$font"
 done
 
 # Download format-icons from peppy_remote repo (full set for remote client)

@@ -36,7 +36,18 @@ $VolumioFiles = @(
     "volumio_spectrum.py", "volumio_basic.py", "screensaverspectrum.py"
 )
 
-$Fonts = @("DSEG7Classic-Bold.ttf", "DSEG7Classic-BoldItalic.ttf", "DSEG7Classic-Italic.ttf", "DSEG7Classic-Regular.ttf")
+$Fonts = @(
+    "DSEG7Classic-Bold.ttf", "DSEG7Classic-BoldItalic.ttf", "DSEG7Classic-Italic.ttf", "DSEG7Classic-Regular.ttf",
+    "fontawesome-webfont.eot", "fontawesome-webfont.svg", "fontawesome-webfont.ttf", "fontawesome-webfont.woff", "fontawesome-webfont.woff2",
+    "FontAwesome.otf",
+    "gibson-bold.ttf", "Gibson-BoldItalic.ttf", "Gibson-Regular.ttf", "Gibson-RegularItalic.ttf",
+    "glyphicons-halflings-regular.eot", "glyphicons-halflings-regular.svg", "glyphicons-halflings-regular.ttf", "glyphicons-halflings-regular.woff", "glyphicons-halflings-regular.woff2",
+    "Lato-Bold.eot", "Lato-Bold.ttf", "Lato-Bold.woff", "Lato-Bold.woff2",
+    "Lato-Light.eot", "Lato-Light.ttf", "Lato-Light.woff", "Lato-Light.woff2",
+    "Lato-Regular.eot", "Lato-Regular.ttf", "Lato-Regular.woff", "Lato-Regular.woff2",
+    "materialdesignicons-webfont.eot", "materialdesignicons-webfont.ttf", "materialdesignicons-webfont.woff", "materialdesignicons-webfont.woff2",
+    "MaterialIcons-Regular.eot", "MaterialIcons-Regular.ttf", "MaterialIcons-Regular.woff", "MaterialIcons-Regular.woff2"
+)
 
 $FormatIcons = @(
     "aac.svg", "aiff.svg", "airplay.svg", "alac.svg", "bt.svg", "cd.svg",
@@ -199,7 +210,7 @@ foreach ($f in $VolumioFiles) {
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "screensaver\fonts") | Out-Null
 foreach ($font in $Fonts) {
-    Download-File "$volBase/fonts/$font" (Join-Path $InstallDir "screensaver\fonts\$font")
+    Download-File "$base/fonts/$font" (Join-Path $InstallDir "screensaver\fonts\$font")
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "screensaver\format-icons") | Out-Null
 foreach ($icon in $FormatIcons) {
