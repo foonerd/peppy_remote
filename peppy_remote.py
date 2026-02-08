@@ -1895,8 +1895,6 @@ class RemoteSpectrumOutput:
         self.spectrum_receiver = spectrum_receiver
         self.sp = None
         self._initialized = False
-        self._fade_in_done = False
-        self._fade_factor = 0.0
         self._last_packet_seq = -1  # Track last processed packet
         self._local_bins = None  # Local copy for decay between packets
         # Validate and clamp decay rate to sensible range
@@ -2038,6 +2036,26 @@ class RemoteSpectrumOutput:
                 self.sp.run_flag = True
                 # NOT calling: self.sp.start_data_source()
                 
+                # Client-side: start from zero and wait for new spectrum data (avoids ghosted full bars
+                # when meter/spectrum changes; decay + server data will drive bars)
+                n_bars = len(self.sp._prev_bar_heights) if (hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights) else (len(self.sp.components) - 1 if self.sp.components else int(self.sp.config.get('size', 30)))
+                n_bars = max(1, n_bars)
+                self._local_bins = [0.0] * n_bars
+                # Force-draw all bars at 0 so set_bars() full height is never shown (no full-value bar / ghost)
+                if hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights:
+                    for i in range(min(n_bars, len(self.sp._prev_bar_heights))):
+                        self.sp._prev_bar_heights[i] = 999.0  # Bypass set_bar_y skip (prev==0 would skip)
+                for i in range(n_bars):
+                    idx = i + 1
+                    try:
+                        self.sp.set_bar_y(idx, 0.0)
+                        if hasattr(self.sp, 'set_reflection_y'):
+                            self.sp.set_reflection_y(idx, 0.0)
+                        if hasattr(self.sp, 'set_topping_y'):
+                            self.sp.set_topping_y(idx, 0.0)
+                    except Exception:
+                        pass
+                
                 self._initialized = True
                 
             finally:
@@ -2061,8 +2079,8 @@ class RemoteSpectrumOutput:
         bins = self.spectrum_receiver.get_bins()
         current_seq = self.spectrum_receiver.seq
         
-        # Initialize local bins on first data (match the spectrum's bar count)
-        if self._local_bins is None and hasattr(self.sp, '_prev_bar_heights'):
+        # Fallback init if start() didn't set _local_bins (e.g. older code path)
+        if self._local_bins is None and hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights:
             self._local_bins = [0.0] * len(self.sp._prev_bar_heights)
         
         if not self._local_bins:
@@ -2077,7 +2095,8 @@ class RemoteSpectrumOutput:
         # 2. Only push bars UP when server sends genuinely NEW higher values
         # 3. Ignore repeated/stale server data so decay can work
         
-        num_bars = min(len(self._local_bins), len(self.sp._prev_bar_heights))
+        _prev_len = len(self.sp._prev_bar_heights) if (hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights) else len(self._local_bins)
+        num_bars = min(len(self._local_bins), _prev_len)
         
         # Track previous server data to detect actual changes
         if not hasattr(self, '_prev_server_bins'):
@@ -2097,6 +2116,18 @@ class RemoteSpectrumOutput:
         if bins:
             self._prev_server_bins = bins.copy()
         
+        # Client-side: ignore "all bars at max" packet (pre-FFT after spectrum reinit); decay and wait for real data
+        if bins and len(bins) >= 2:
+            mx = max(bins)
+            if mx > 50 and all(abs(b - mx) <= 2 for b in bins):
+                # Treat as pre-FFT full-height burst: zero and don't apply this packet
+                for i in range(num_bars):
+                    if i < len(self._local_bins):
+                        self._local_bins[i] *= self._decay_rate
+                        if self._local_bins[i] < 0.5:
+                            self._local_bins[i] = 0.0
+                bins = None  # Skip Step 2 so we don't push full values into _local_bins
+        
         # Step 1: Apply decay to all local bins (ALWAYS)
         for i in range(num_bars):
             self._local_bins[i] *= self._decay_rate
@@ -2111,18 +2142,14 @@ class RemoteSpectrumOutput:
                 if server_val > self._local_bins[i]:
                     self._local_bins[i] = server_val  # Instant rise to peak
         
-        # Step 3: Update visual components
+        # Step 3: Update visual components (no fade-in; follow server data + decay)
         for i in range(num_bars):
             new_height = self._local_bins[i]
-            
-            # Fade in effect on first data
-            if not self._fade_in_done:
-                new_height *= self._fade_factor
-            
             idx = i + 1  # 1-based index for Spectrum methods
             
             # Force update by setting prev to different value (bypass optimization)
-            self.sp._prev_bar_heights[i] = new_height + 100
+            if hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights and i < len(self.sp._prev_bar_heights):
+                self.sp._prev_bar_heights[i] = new_height + 100
             
             try:
                 self.sp.set_bar_y(idx, new_height)
@@ -2132,13 +2159,6 @@ class RemoteSpectrumOutput:
                     self.sp.set_topping_y(idx, new_height)
             except Exception:
                 pass
-        
-        
-        # Gradual fade-in
-        if not self._fade_in_done:
-            self._fade_factor = min(1.0, self._fade_factor + 0.05)  # ~20 frames to full
-            if self._fade_factor >= 1.0:
-                self._fade_in_done = True
         
         # Draw spectrum (without display.update - parent handles that)
         try:
