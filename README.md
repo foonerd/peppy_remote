@@ -2,7 +2,7 @@
 
 Display PeppyMeter visualizations on any Debian-based system by connecting to a Volumio server running the PeppyMeter plugin.
 
-This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network.
+This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server’s first announcement before starting the meter (syncing screen), syncs to the server’s theme (including random meter), and only reloads when the theme folder or theme name actually changes.
 
 ## Quick Install
 
@@ -100,6 +100,8 @@ After installation, run (on Linux use `~/peppy_remote/peppy_remote`; on Windows 
 ~/peppy_remote/peppy_remote --config-text
 ```
 
+To exit the meter, press **ESC** or **Q**, or click/touch the screen.
+
 ## Configuration
 
 ### Setup Wizard (Recommended)
@@ -110,7 +112,7 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config
 ```
 
-- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → Spectrum decay → Logger/debug → Save & Run or Save & Exit.
+- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
 - **Without a display** (e.g. SSH): Falls back to the **terminal (text) wizard** in the same session.
 - **Terminal-only wizard:** Use `--config-text` to force the text-based wizard and skip the GUI:
 
@@ -180,6 +182,8 @@ Settings are stored in `~/peppy_remote/config.json`:
 }
 ```
 
+**Note:** Persist countdown (duration and freeze/countdown mode) is supplied by the server in the config response; it is not stored in `config.json`.
+
 ### Configuration Options
 
 | Section | Key | Default | Description |
@@ -194,6 +198,7 @@ Settings are stored in `~/peppy_remote/config.json`:
 | debug | level | "off" | Debug level: off/basic/verbose/trace |
 | debug | trace_spectrum | false | Log per-packet spectrum data |
 | debug | trace_network | false | Log network connection details |
+| debug | trace_config | false | Log config fetch and theme/sync decisions |
 
 Command-line arguments override config file settings:
 
@@ -230,22 +235,31 @@ Command-line arguments override config file settings:
 ## How It Works
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
-   - Discovery packets include `config_version` for detecting config changes
-2. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
+   - Discovery packets include `config_version` (for config change detection) and `active_meter` (protocol v3: server’s current theme for random-meter sync).
+2. **Startup / syncing**: Before the meter starts, the client shows a “Waiting for data from server” / “Please wait a moment.” screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server’s current theme (including when the server uses random meter) before drawing.
+3. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
    - Uses direct IP address from discovery for reliable connectivity
    - Endpoint: `/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig`
-3. **Templates**: Mounts template skins from server via SMB
-4. **Audio Levels**: Receives real-time level data via UDP (port 5580)
-5. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations
-6. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art, playback state
-7. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators)
+   - Persist countdown settings (duration, freeze vs countdown) are taken from the server and used when playback stops.
+4. **Templates**: Mounts template skins from server via SMB (or uses local/UNC paths if configured).
+5. **Audio Levels**: Receives real-time level data via UDP (port 5580).
+6. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations.
+7. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art, playback state.
+8. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
+9. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter.
 
 ## Installation Structure
 
+After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
+
 ```
 ~/peppy_remote/
-├── peppy_remote          # Launcher script
+├── peppy_remote          # Launcher script (Linux; runs peppy_remote.py via venv)
 ├── peppy_remote.py       # Main client
+├── uninstall.sh          # Uninstall script (Linux)
+├── peppy_remote.svg      # App icon (desktop launchers)
+├── peppy_remote_config.svg
+├── config.json           # Client configuration
 ├── screensaver/          # Mirrors Volumio plugin structure
 │   ├── peppymeter/       # PeppyMeter base engine (git clone)
 │   │   ├── peppymeter.py
@@ -258,18 +272,24 @@ Command-line arguments override config file settings:
 │   │   ├── spectrumconfigparser.py
 │   │   └── ...
 │   ├── volumio_peppymeter.py   # Volumio main handler
+│   ├── volumio_configfileparser.py
 │   ├── volumio_turntable.py    # Turntable/vinyl animations
 │   ├── volumio_cassette.py     # Cassette deck animations
 │   ├── volumio_compositor.py   # Layer compositing
 │   ├── volumio_indicators.py   # Volume/mute/shuffle icons
 │   ├── volumio_spectrum.py     # Spectrum integration
-│   ├── volumio_configfileparser.py
-│   ├── fonts/
+│   ├── volumio_basic.py        # Basic display handler
+│   ├── screensaverspectrum.py
+│   ├── fonts/            # Bundled fonts for meter/theme text (see Fonts below)
 │   └── format-icons/     # Track type icons (SVG)
-├── mnt/                  # SMB mount for templates
+├── mnt/                  # SMB mount for templates (Linux)
 ├── venv/                 # Python virtual environment
-└── config.json           # Client configuration
+└── config.json
 ```
+
+## Fonts
+
+The installer downloads a full set of fonts to `screensaver/fonts/` so the meter and themes render correctly without relying on the server or system fonts. Bundled families include **DSEG7** (LCD-style digits), **Lato**, **Gibson**, **Font Awesome**, **Material Icons**, **Material Design Icons**, and **Glyphicons Halflings**. Themes and handlers reference these from the screensaver path.
 
 ## Format Icons
 
@@ -349,6 +369,9 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Verify screensaver directory exists: `ls ~/peppy_remote/screensaver/`
 - Check volumio_*.py files downloaded: `ls ~/peppy_remote/screensaver/volumio_*.py`
 - Check PeppyMeter cloned: `ls ~/peppy_remote/screensaver/peppymeter/`
+
+**Theme restarts or flicker when server hasn’t changed:**
+- The client only reloads when the **theme folder** or **theme name** would change. If you see “Config/folder+theme unchanged, continuing.” in the log, the meter correctly did not restart. If restarts still happen, check that the server plugin is up to date (protocol v3 with `active_meter` in discovery).
 
 **Display issues ("windows not available"):**
 - Ensure DISPLAY environment variable is set: `echo $DISPLAY`
