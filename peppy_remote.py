@@ -2427,6 +2427,9 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
         config['current']['meter'] = 'random'
         log_client(f"Forced meter setting: random", "verbose")
     
+    # SMOOTH_ROTATION: this is the only place that sets smooth.rotation (rollback: remove next 2 lines)
+    config['current']['smooth.rotation'] = 'True'  # written to config.txt; parser reads it into meter_config_volumio
+    
     # SDL settings for windowed display (not embedded framebuffer)
     # These will be read by volumio_peppymeter's init_display()
     config['sdl.env']['framebuffer.device'] = ''
