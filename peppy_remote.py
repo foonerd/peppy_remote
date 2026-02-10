@@ -139,7 +139,9 @@ DEFAULT_CONFIG = {
         "windowed": True,       # True = movable window with title bar
         "position": None,       # None = centered, or [x, y]
         "fullscreen": False,
-        "monitor": 0
+        "monitor": 0,
+        "meter_folder": None,   # Kiosk: fixed template folder (e.g. "1920x720_5skins") or None = use server
+        "meter": None,          # Kiosk: "section", "random", or "sect1,sect2,sect3"; None = use server
     },
     "templates": {
         "use_smb": True,
@@ -216,6 +218,37 @@ def save_config(config):
         return False
 
 
+def get_template_folders(templates_path):
+    """Return list of folder names under templates_path that contain meters.txt."""
+    if not templates_path or not os.path.isdir(templates_path):
+        return []
+    out = []
+    try:
+        for name in sorted(os.listdir(templates_path)):
+            path = os.path.join(templates_path, name)
+            if os.path.isdir(path) and os.path.exists(os.path.join(path, 'meters.txt')):
+                out.append(name)
+    except (OSError, IOError):
+        pass
+    return out
+
+
+def get_meter_sections(templates_path, meter_folder):
+    """Return list of section names from meter_folder/meters.txt."""
+    if not templates_path or not meter_folder:
+        return []
+    meters_file = os.path.join(templates_path, meter_folder, 'meters.txt')
+    if not os.path.exists(meters_file):
+        return []
+    try:
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg.read(meters_file)
+        return cfg.sections()
+    except Exception:
+        return []
+
+
 def run_config_wizard():
     """Interactive configuration wizard."""
     config = load_config()
@@ -260,10 +293,17 @@ def run_config_wizard():
         print(f"  11. Spectrum path:    {spectrum_local}")
         print()
         
+        # Theme (kiosk / fixed meter)
+        mf = config["display"].get("meter_folder") or "(server)"
+        mm = config["display"].get("meter") or "(server)"
+        print("Meter theme (kiosk):")
+        print(f"  12. Theme:            folder={mf}, meter={mm}")
+        print()
+        
         # Spectrum settings
         decay = config.get("spectrum", {}).get("decay_rate", 0.95)
         print("Spectrum Settings:")
-        print(f"  12. Decay rate:       {decay} (0.85=fast, 0.98=slow)")
+        print(f"  13. Decay rate:       {decay} (0.85=fast, 0.98=slow)")
         print()
         
         # Debug settings
@@ -271,9 +311,9 @@ def run_config_wizard():
         trace_spectrum = "yes" if config.get("debug", {}).get("trace_spectrum", False) else "no"
         trace_network = "yes" if config.get("debug", {}).get("trace_network", False) else "no"
         print("Debug Settings:")
-        print(f"  13. Debug level:      {debug_level}")
-        print(f"  14. Trace spectrum:   {trace_spectrum}")
-        print(f"  15. Trace network:    {trace_network}")
+        print(f"  14. Debug level:      {debug_level}")
+        print(f"  15. Trace spectrum:   {trace_spectrum}")
+        print(f"  16. Trace network:    {trace_network}")
         print()
         
         print("-" * 50)
@@ -374,6 +414,74 @@ def run_config_wizard():
             if path:
                 config["templates"]["local_path"] = path
     
+    def config_theme():
+        print()
+        print("Meter theme (kiosk):")
+        print("  1. Use server theme (follow Volumio)")
+        print("  2. Fixed theme (choose folder + meter)")
+        print()
+        choice = input("Choice [1]: ").strip() or "1"
+        if choice != "2":
+            config["display"]["meter_folder"] = None
+            config["display"]["meter"] = None
+            return
+        templates_path = (config["templates"].get("local_path") or "").strip() or os.path.join(SCRIPT_DIR, "data", "templates")
+        folders = get_template_folders(templates_path)
+        if not folders:
+            print("No template folders found (need meters.txt in each folder). Using server theme.")
+            config["display"]["meter_folder"] = None
+            config["display"]["meter"] = None
+            return
+        print("Template folders:")
+        for i, name in enumerate(folders, 1):
+            print(f"  {i}. {name}")
+        fchoice = input(f"Folder [1]: ").strip() or "1"
+        try:
+            idx = int(fchoice)
+            folder = folders[idx - 1] if 1 <= idx <= len(folders) else folders[0]
+        except ValueError:
+            folder = fchoice if fchoice in folders else folders[0]
+        config["display"]["meter_folder"] = folder
+        print()
+        print("Meter mode:")
+        print("  1. Fixed (one meter)")
+        print("  2. Random from folder")
+        print("  3. Random from list (pick several)")
+        print()
+        mchoice = input("Choice [1]: ").strip() or "1"
+        sections = get_meter_sections(templates_path, folder)
+        if mchoice == "2":
+            config["display"]["meter"] = "random"
+        elif mchoice == "3" and sections:
+            print("Meters in folder:")
+            for i, name in enumerate(sections, 1):
+                print(f"  {i}. {name}")
+            sel = input("Numbers to include (e.g. 1,3,5 or names comma-separated): ").strip()
+            if sel:
+                parts = [p.strip() for p in sel.split(",")]
+                chosen = []
+                for p in parts:
+                    if p.isdigit() and 1 <= int(p) <= len(sections):
+                        chosen.append(sections[int(p) - 1])
+                    elif p in sections:
+                        chosen.append(p)
+                config["display"]["meter"] = ",".join(chosen) if chosen else "random"
+            else:
+                config["display"]["meter"] = "random"
+        else:
+            if not sections:
+                config["display"]["meter"] = "random"
+            else:
+                print("Meters in folder:")
+                for i, name in enumerate(sections, 1):
+                    print(f"  {i}. {name}")
+                schoice = input(f"Meter [1]: ").strip() or "1"
+                try:
+                    idx = int(schoice)
+                    config["display"]["meter"] = sections[idx - 1] if 1 <= idx <= len(sections) else sections[0]
+                except ValueError:
+                    config["display"]["meter"] = schoice if schoice in sections else sections[0]
+    
     def config_decay_rate():
         print()
         print("Spectrum decay rate (per frame):")
@@ -460,12 +568,14 @@ def run_config_wizard():
             path = input("Spectrum templates path (empty to clear): ").strip()
             config["templates"]["spectrum_local_path"] = path if path else None
         elif choice == "12":
-            config_decay_rate()
+            config_theme()
         elif choice == "13":
-            config_debug_level()
+            config_decay_rate()
         elif choice == "14":
-            config_trace_toggle("trace_spectrum", "Trace spectrum packets")
+            config_debug_level()
         elif choice == "15":
+            config_trace_toggle("trace_spectrum", "Trace spectrum packets")
+        elif choice == "16":
             config_trace_toggle("trace_network", "Trace network connections")
         elif choice == "S":
             config["wizard_completed"] = True
@@ -706,7 +816,62 @@ def run_wizard_ui(initial_config=None):
     ttk.Button(spectrum_path_row, text="Browse…", width=8, command=browse_spectrum_path).pack(side=tk.LEFT)
     steps.append(templates_frame)
 
-    # ----- Step 4: Spectrum -----
+    # ----- Step 4: Theme (kiosk / fixed meter) -----
+    theme_frame = ttk.Frame(main_frame)
+    ttk.Label(theme_frame, text="Meter theme", font=('', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+    _wrap_label(theme_frame, text="Use server theme (follow Volumio) or lock this client to a fixed theme (kiosk).", font=('', 9)).pack(anchor=tk.W, pady=(0, 6))
+    theme_mode_var = tk.StringVar(value="server")
+    _mf, _mm = config["display"].get("meter_folder"), config["display"].get("meter")
+    if _mf and _mm:
+        if _mm.strip().lower() == "random":
+            theme_mode_var.set("random_folder")
+        elif "," in (_mm or ""):
+            theme_mode_var.set("random_list")
+        else:
+            theme_mode_var.set("fixed")
+    ttk.Radiobutton(theme_frame, text="Use server theme", variable=theme_mode_var, value="server").pack(anchor=tk.W)
+    ttk.Radiobutton(theme_frame, text="Fixed theme (one meter)", variable=theme_mode_var, value="fixed").pack(anchor=tk.W)
+    ttk.Radiobutton(theme_frame, text="Random from folder", variable=theme_mode_var, value="random_folder").pack(anchor=tk.W)
+    ttk.Radiobutton(theme_frame, text="Random from list", variable=theme_mode_var, value="random_list").pack(anchor=tk.W)
+    theme_folder_var = tk.StringVar(value=config["display"].get("meter_folder") or "")
+    theme_meter_var = tk.StringVar(value=config["display"].get("meter") or "")
+    theme_meter_list_var = tk.Variable(value=[])
+    def _theme_templates_path():
+        return (local_path_var.get() or "").strip() or os.path.join(SCRIPT_DIR, "data", "templates")
+    def _refresh_theme_folders():
+        path = _theme_templates_path()
+        folders = get_template_folders(path)
+        folder_combo["values"] = folders
+        if folders and not theme_folder_var.get() and theme_mode_var.get() != "server":
+            theme_folder_var.set(folders[0])
+        _refresh_theme_meters()
+    def _refresh_theme_meters():
+        folder = (theme_folder_var.get() or "").strip()
+        path = _theme_templates_path()
+        sections = get_meter_sections(path, folder) if folder else []
+        meter_combo["values"] = sections
+        meter_listbox.delete(0, tk.END)
+        for s in sections:
+            meter_listbox.insert(tk.END, s)
+        if sections and theme_mode_var.get() == "fixed" and not theme_meter_var.get():
+            theme_meter_var.set(sections[0])
+    def _on_theme_folder_change(*_):
+        _refresh_theme_meters()
+    theme_folder_var.trace_add("write", _on_theme_folder_change)
+    ttk.Label(theme_frame, text="Template folder:", font=('', 9)).pack(anchor=tk.W, pady=(10, 0))
+    folder_combo = ttk.Combobox(theme_frame, textvariable=theme_folder_var, width=36, state="readonly")
+    folder_combo.pack(anchor=tk.W, fill=tk.X, pady=2)
+    ttk.Label(theme_frame, text="Meter (fixed) or list (random from list):", font=('', 9)).pack(anchor=tk.W, pady=(8, 0))
+    meter_row = ttk.Frame(theme_frame)
+    meter_row.pack(anchor=tk.W, fill=tk.X, pady=2)
+    meter_combo = ttk.Combobox(meter_row, textvariable=theme_meter_var, width=24, state="readonly")
+    meter_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+    meter_listbox = tk.Listbox(meter_row, selectmode=tk.MULTIPLE, height=4, width=24)
+    meter_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    _refresh_theme_folders()
+    steps.append(theme_frame)
+
+    # ----- Step 5: Spectrum -----
     spectrum_frame = ttk.Frame(main_frame)
     ttk.Label(spectrum_frame, text="Spectrum settings", font=('', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
     decay = config.get("spectrum", {}).get("decay_rate", 0.95)
@@ -716,7 +881,7 @@ def run_wizard_ui(initial_config=None):
     decay_spin.pack(anchor=tk.W, pady=4)
     steps.append(spectrum_frame)
 
-    # ----- Step 5: Logger / Debug -----
+    # ----- Step 6: Logger / Debug -----
     debug_frame = ttk.Frame(main_frame)
     ttk.Label(debug_frame, text="Logger / debug", font=('', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
     debug_level_var = tk.StringVar(value=config.get("debug", {}).get("level", "off"))
@@ -729,7 +894,7 @@ def run_wizard_ui(initial_config=None):
     ttk.Checkbutton(debug_frame, text="Trace network connections", variable=trace_network_var).pack(anchor=tk.W, pady=2)
     steps.append(debug_frame)
 
-    # ----- Step 6: Done -----
+    # ----- Step 7: Done -----
     done_frame = ttk.Frame(main_frame)
     ttk.Label(done_frame, text="You’re all set", font=('', 12, 'bold')).pack(anchor=tk.W, pady=(0, 10))
     _wrap_label(done_frame, text="Save your settings and choose whether to start the client now.", justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 16))
@@ -775,6 +940,23 @@ def run_wizard_ui(initial_config=None):
         sp = (spectrum_local_var.get() or "").strip()
         config["templates"]["spectrum_local_path"] = sp if sp else None
 
+    def apply_theme():
+        mode = theme_mode_var.get()
+        if mode == "server":
+            config["display"]["meter_folder"] = None
+            config["display"]["meter"] = None
+        else:
+            folder = (theme_folder_var.get() or "").strip()
+            config["display"]["meter_folder"] = folder if folder else None
+            if mode == "random_folder":
+                config["display"]["meter"] = "random"
+            elif mode == "fixed":
+                config["display"]["meter"] = (theme_meter_var.get() or "").strip() or None
+            else:
+                sel = meter_listbox.curselection()
+                sections = [meter_listbox.get(i) for i in sel] if sel else []
+                config["display"]["meter"] = ",".join(sections) if sections else None
+
     def apply_spectrum():
         try:
             v = float(decay_var.get())
@@ -813,14 +995,19 @@ def run_wizard_ui(initial_config=None):
             apply_templates()
             show_step(4)
             current_step[0] = 4
+            _refresh_theme_folders()
         elif current_step[0] == 4:
-            apply_spectrum()
+            apply_theme()
             show_step(5)
             current_step[0] = 5
         elif current_step[0] == 5:
-            apply_debug()
+            apply_spectrum()
             show_step(6)
             current_step[0] = 6
+        elif current_step[0] == 6:
+            apply_debug()
+            show_step(7)
+            current_step[0] = 7
             btn_next.pack_forget()
             btn_back.pack(side=tk.RIGHT, padx=4)
             btn_save_run.pack(side=tk.RIGHT, padx=4)
@@ -845,6 +1032,9 @@ def run_wizard_ui(initial_config=None):
         elif current_step[0] == 6:
             show_step(5)
             current_step[0] = 5
+        elif current_step[0] == 7:
+            show_step(6)
+            current_step[0] = 6
             btn_save_run.pack_forget()
             btn_save_exit.pack_forget()
             btn_back.pack_forget()
@@ -854,6 +1044,7 @@ def run_wizard_ui(initial_config=None):
         apply_server()
         apply_display()
         apply_templates()
+        apply_theme()
         apply_spectrum()
         apply_debug()
         config["wizard_completed"] = True
@@ -867,6 +1058,7 @@ def run_wizard_ui(initial_config=None):
         apply_server()
         apply_display()
         apply_templates()
+        apply_theme()
         apply_spectrum()
         apply_debug()
         config["wizard_completed"] = True
@@ -2254,15 +2446,20 @@ class RemoteSpectrumOutput:
 # =============================================================================
 # Parse server config to get (meter_folder, chosen_meter) without writing
 # =============================================================================
-def parse_server_meter_state(config_content, templates_path, active_meter_override=None):
+def parse_server_meter_state(config_content, templates_path, active_meter_override=None, client_theme_override=None):
     """
     Parse server config content and return (meter_folder, chosen_meter) that would be used.
     Does not write any files. Uses same rules as setup_remote_config for chosen_meter.
+    If client_theme_override is (folder, meter) with both non-empty, return that and do not parse server.
     Used to compare with current theme before deciding to restart on config change.
     """
     import configparser
     from io import StringIO
 
+    if client_theme_override:
+        c_folder, c_meter = client_theme_override
+        if (c_folder or '').strip() and (c_meter or '').strip():
+            return (c_folder or '').strip(), (c_meter or '').strip()
     if not config_content:
         return '', 'random'
 
@@ -2310,16 +2507,18 @@ def parse_server_meter_state(config_content, templates_path, active_meter_overri
 # =============================================================================
 # Setup Remote Config
 # =============================================================================
-def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override=None):
+def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_meter_override=None, client_config=None):
     """
     Set up config.txt for remote client mode.
     
     Fetches config from server via HTTP and adjusts paths for local use.
+    If client_config has display.meter_folder and display.meter (kiosk override), those are used instead of server theme.
     
     :param peppymeter_path: Path to peppymeter directory
     :param templates_path: Path to meter templates
     :param config_fetcher: ConfigFetcher instance for HTTP config retrieval
     :param active_meter_override: If set, override meter name (for random meter sync)
+    :param client_config: Client config dict; if display.meter_folder and display.meter are set, use as fixed theme
     """
     import configparser
     
@@ -2382,42 +2581,52 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
     # Keep meter.folder unchanged (it's already correct from server config)
     log_client(f"Config from server: meter.folder={meter_folder!r}, meter={meter_value!r}, override={active_meter_override!r}", "trace", "config")
     
-    # Determine the meter to use
-    chosen_meter = None
-    if active_meter_override:
-        # Server sent a specific active meter - validate it exists in the template
-        meters_file = os.path.join(templates_path, meter_folder, 'meters.txt') if meter_folder else ''
-        if meters_file and os.path.exists(meters_file):
-            try:
-                import configparser as cp
-                meters_cfg = cp.ConfigParser()
-                meters_cfg.read(meters_file)
-                # Check if the active_meter_override is a valid section in meters.txt
-                if active_meter_override in meters_cfg.sections():
-                    chosen_meter = active_meter_override
-                    print(f"  Using active meter from server: {active_meter_override}")
-                else:
-                    # Meter doesn't exist in this template - use server's meter value or random
-                    log_client(f"Active meter '{active_meter_override}' not found in {meter_folder}, using fallback", "verbose")
-                    chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
-                    print(f"  Active meter '{active_meter_override}' not in template, using: {chosen_meter}")
-            except Exception as e:
-                log_client(f"Failed to validate meter: {e}", "verbose")
-                chosen_meter = active_meter_override  # Try anyway
-                print(f"  Using active meter from server: {active_meter_override}")
-        else:
-            chosen_meter = active_meter_override
-            print(f"  Using active meter from server: {active_meter_override}")
-    elif not meter_value and meter_folder:
-        # Fallback: use meter.folder value as meter if meter is missing
-        chosen_meter = meter_folder
-        log_client(f"Using meter.folder as meter fallback: {meter_folder}", "verbose")
-    elif not meter_value:
-        # Neither exists - this is a broken config, set a safe default
-        print(f"  WARNING: No 'meter' or 'meter.folder' in config, using 'random'")
-        chosen_meter = 'random'
+    # Client theme override (kiosk / fixed theme): use display.meter_folder + display.meter if both set
+    display = (client_config or {}).get("display") or {}
+    override_folder = (display.get("meter_folder") or "").strip()
+    override_meter = (display.get("meter") or "").strip()
+    if override_folder and override_meter:
+        config['current']['meter.folder'] = override_folder
+        config['current']['meter'] = override_meter
+        chosen_meter = override_meter
+        log_client(f"Using client theme override: folder={override_folder!r}, meter={override_meter!r}", "verbose", "config")
     else:
-        chosen_meter = meter_value
+        # Determine the meter to use (server + active_meter_override)
+        chosen_meter = None
+        if active_meter_override:
+            # Server sent a specific active meter - validate it exists in the template
+            meters_file = os.path.join(templates_path, meter_folder, 'meters.txt') if meter_folder else ''
+            if meters_file and os.path.exists(meters_file):
+                try:
+                    import configparser as cp
+                    meters_cfg = cp.ConfigParser()
+                    meters_cfg.read(meters_file)
+                    # Check if the active_meter_override is a valid section in meters.txt
+                    if active_meter_override in meters_cfg.sections():
+                        chosen_meter = active_meter_override
+                        print(f"  Using active meter from server: {active_meter_override}")
+                    else:
+                        # Meter doesn't exist in this template - use server's meter value or random
+                        log_client(f"Active meter '{active_meter_override}' not found in {meter_folder}, using fallback", "verbose")
+                        chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
+                        print(f"  Active meter '{active_meter_override}' not in template, using: {chosen_meter}")
+                except Exception as e:
+                    log_client(f"Failed to validate meter: {e}", "verbose")
+                    chosen_meter = active_meter_override  # Try anyway
+                    print(f"  Using active meter from server: {active_meter_override}")
+            else:
+                chosen_meter = active_meter_override
+                print(f"  Using active meter from server: {active_meter_override}")
+        elif not meter_value and meter_folder:
+            # Fallback: use meter.folder value as meter if meter is missing
+            chosen_meter = meter_folder
+            log_client(f"Using meter.folder as meter fallback: {meter_folder}", "verbose")
+        elif not meter_value:
+            # Neither exists - this is a broken config, set a safe default
+            print(f"  WARNING: No 'meter' or 'meter.folder' in config, using 'random'")
+            chosen_meter = 'random'
+        else:
+            chosen_meter = meter_value
     
     # Set the chosen meter
     config['current']['meter'] = chosen_meter or meter_folder or 'random'
@@ -2519,7 +2728,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     
     # Fetch and setup config BEFORE any imports that might read it
     config_path, initial_chosen_meter, initial_meter_folder = setup_remote_config(
-        peppymeter_path, templates_path, config_fetcher
+        peppymeter_path, templates_path, config_fetcher, client_config=client_config
     )
     
     # Set SDL environment for desktop BEFORE pygame import
@@ -2737,7 +2946,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             active_meter_override = version_listener.new_active_meter
             os.chdir(peppymeter_path)
             config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
-                peppymeter_path, templates_path, config_fetcher, active_meter_override
+                peppymeter_path, templates_path, config_fetcher, active_meter_override, client_config=client_config
             )
             current_version_holder['active_meter'] = new_chosen_meter or ''
             current_version_holder['active_meter_folder'] = new_meter_folder or ''
@@ -2829,6 +3038,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         # Cache for "should exit for reload?" so we only fetch once per reload request
         _reload_check_done = [False]
         _reload_should_exit = [None]
+        # Client theme override for reload checks (kiosk: use display.meter_folder + display.meter when both set)
+        _display = client_config.get("display") or {}
+        _of = (str(_display.get("meter_folder") or "")).strip()
+        _om = (str(_display.get("meter") or "")).strip()
+        client_override = (_of, _om) if (_of and _om) else None
 
         def _check_reload_callback():
             """Return True only when we actually need to reload (folder or theme would change)."""
@@ -2846,7 +3060,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 _reload_should_exit[0] = True
                 return True
             new_meter_folder, new_chosen_meter = parse_server_meter_state(
-                config_content, templates_path, active_meter_override
+                config_content, templates_path, active_meter_override, client_theme_override=client_override
             )
             if new_meter_folder == current_folder and new_chosen_meter == current_meter:
                 version_listener.reload_requested = False
@@ -2895,7 +3109,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 success, config_content, _ = config_fetcher.fetch()
                 if success and config_content:
                     new_meter_folder, new_chosen_meter = parse_server_meter_state(
-                        config_content, templates_path, active_meter_override
+                        config_content, templates_path, active_meter_override, client_theme_override=client_override
                     )
                     if (new_meter_folder == current_folder and new_chosen_meter == current_meter):
                         current_version_holder['version'] = config_fetcher.cached_version or ''
@@ -2914,7 +3128,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 # Restore CWD before reload - spectrum may have changed it to its template directory
                 os.chdir(peppymeter_path)
                 config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
-                    peppymeter_path, templates_path, config_fetcher, active_meter_override
+                    peppymeter_path, templates_path, config_fetcher, active_meter_override, client_config=client_config
                 )
                 current_version_holder['active_meter'] = new_chosen_meter or ''
                 current_version_holder['active_meter_folder'] = new_meter_folder or ''

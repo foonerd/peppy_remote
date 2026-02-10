@@ -2,7 +2,7 @@
 
 Display PeppyMeter visualizations on any Debian-based system by connecting to a Volumio server running the PeppyMeter plugin.
 
-This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server’s first announcement before starting the meter (syncing screen), syncs to the server’s theme (including random meter), and only reloads when the theme folder or theme name actually changes.
+This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server’s first announcement before starting the meter (syncing screen). By default it syncs to the server’s theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
 
 ## Quick Install
 
@@ -112,7 +112,7 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config
 ```
 
-- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
+- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → **Meter theme** (use server theme or fixed/kiosk: folder + fixed meter, random from folder, or random from list) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
 - **Without a display** (e.g. SSH): Falls back to the **terminal (text) wizard** in the same session.
 - **Terminal-only wizard:** Use `--config-text` to force the text-based wizard and skip the GUI:
 
@@ -126,10 +126,15 @@ The wizard configures:
 - Server (auto-discover, enter hostname, or enter IP; after discovery you can choose “Use hostname” or “Use IP address” for the selected server)
 - Display mode (windowed, fullscreen)
 - Template sources (SMB mount or local paths with optional Browse)
+- **Meter theme**: Use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
 - Spectrum decay rate
 - Debug level and trace options
 
 Settings are saved to `~/peppy_remote/config.json` and persist between runs.
+
+### Fixed theme (kiosk)
+
+To lock this client to a specific meter theme (e.g. one display always showing the same skin), set **Meter theme** in the wizard to something other than "Use server theme", or edit `config.json` and set both `display.meter_folder` (template folder name, e.g. `1920x720_5skins`) and `display.meter` (section name from that folder’s `meters.txt`, or `"random"` for random from that folder, or a comma-separated list for random from that list). When both are set, the client ignores server theme changes and never reloads for theme updates. Leave both `null` to follow the server theme.
 
 ### Display Modes
 
@@ -163,7 +168,9 @@ Settings are stored in `~/peppy_remote/config.json`:
     "windowed": true,
     "position": null,
     "fullscreen": false,
-    "monitor": 0
+    "monitor": 0,
+    "meter_folder": null,
+    "meter": null
   },
   "templates": {
     "use_smb": true,
@@ -191,6 +198,8 @@ Settings are stored in `~/peppy_remote/config.json`:
 | server | host | null | Server hostname/IP (null = auto-discover) |
 | server | level_port | 5580 | UDP port for meter level data |
 | server | spectrum_port | 5581 | UDP port for spectrum FFT data |
+| display | meter_folder | null | Kiosk: template folder (e.g. `1920x720_5skins`); null = use server theme |
+| display | meter | null | Kiosk: meter section name, `"random"`, or comma-separated list; null = use server theme |
 | templates | use_smb | true | Mount templates from server via SMB |
 | templates | local_path | null | Local meter templates path |
 | templates | spectrum_local_path | null | Local spectrum templates path |
@@ -246,7 +255,7 @@ Command-line arguments override config file settings:
 6. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations.
 7. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art, playback state.
 8. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
-9. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter.
+9. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
 
 ## Installation Structure
 
