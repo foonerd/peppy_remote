@@ -229,10 +229,10 @@ $patchFiles = @(
 )
 foreach ($file in $patchFiles) {
     if (Test-Path $file) {
-        $c = Get-Content $file -Raw
+        $c = Get-Content $file -Raw -Encoding UTF8
         $c = $c -replace "local_icons = \{'tidal', 'cd', 'qobuz', 'dab', 'fm', 'radio'\}", "local_icons = {$AllIcons}"
         $c = $c -replace "local_icons = \{'tidal', 'cd', 'qobuz'\}", "local_icons = {$AllIcons}"
-        Set-Content $file -Value $c -NoNewline
+        Set-Content $file -Value $c -NoNewline -Encoding UTF8
         Write-Host "  Patched: $([System.IO.Path]::GetFileName($file))"
     }
 }
@@ -252,14 +252,17 @@ $pipName = if ($isWin) { "pip.exe" } else { "pip" }
 $pythonName = if ($isWin) { "python.exe" } else { "python" }
 $pip = Join-Path $InstallDir (Join-Path "venv" (Join-Path $venvBin $pipName))
 $pythonExe = Join-Path $InstallDir (Join-Path "venv" (Join-Path $venvBin $pythonName))
-& $pip install --upgrade pip wheel -q 2>$null
+$prevErr = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $pip install --upgrade pip wheel -q 2>&1 | Out-Null
 $packages = @(
     "pillow", "pygame", "cairosvg", "cssselect2", "tinycss2", "defusedxml", "webencodings",
     "python-socketio[client]", "python-engineio", "bidict", "requests", "certifi",
     "charset-normalizer", "idna", "urllib3", "websocket-client", "mss", "pyscreenshot",
     "easyprocess", "entrypoint2"
 )
-& $pip install @packages -q 2>$null
+& $pip install @packages -q 2>&1 | Out-Null
+$ErrorActionPreference = $prevErr
 Write-Host "  Python packages installed"
 
 # --- Launcher script ---
