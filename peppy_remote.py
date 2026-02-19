@@ -1652,7 +1652,7 @@ def _patch_handlers_for_local_icons(screensaver_path):
             continue
             
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             modified = False
@@ -1664,7 +1664,7 @@ def _patch_handlers_for_local_icons(screensaver_path):
                         modified = True
             
             if modified:
-                with open(filepath, 'w') as f:
+                with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(content)
                 patched_count += 1
                 
