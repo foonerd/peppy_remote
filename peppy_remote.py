@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import signal
+import tempfile
 import socket
 import struct
 import subprocess
@@ -2887,7 +2888,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         )
         version_listener.start()
         
-        peppy_running_file = '/tmp/peppyrunning'
+        peppy_running_file = os.path.join(tempfile.gettempdir(), 'peppyrunning')
         from pathlib import Path
         
         # Determine display flags from config (passed via environment)
@@ -3025,8 +3026,10 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         print("Press ESC or Q to exit, or click/touch screen")
         
         Path(peppy_running_file).touch()
-        Path(peppy_running_file).chmod(0o777)
-        
+        try:
+            Path(peppy_running_file).chmod(0o777)
+        except (OSError, AttributeError):
+            pass
         # Support both old and new volumio_peppymeter (new has check_reload_callback)
         try:
             import inspect
@@ -3087,7 +3090,10 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 pending_active_meter = version_listener.new_active_meter
                 version_listener.new_active_meter = None
                 Path(peppy_running_file).touch()
-                Path(peppy_running_file).chmod(0o777)
+                try:
+                    Path(peppy_running_file).chmod(0o777)
+                except (OSError, AttributeError):
+                    pass
                 if reload_callback_supported:
                     start_display_output(pm, callback, meter_config_volumio,
                                         volumio_host=server_info['ip'],
