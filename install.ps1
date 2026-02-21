@@ -16,6 +16,13 @@ param(
     [string]$Dir = ""
 )
 
+# Require TLS 1.2 for GitHub/HTTPS on Windows 10 (default .NET protocol can fail)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Force UTF-8 for this session (avoids cp950/cp1252 issues with downloads and output)
+$OutputEncoding = [System.Text.Encoding]::UTF8
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+
 $ErrorActionPreference = "Stop"
 
 $RepoUrl = "https://github.com/foonerd/peppy_remote"
@@ -95,6 +102,14 @@ if ($args -contains "-Help" -or $args -contains "-h") {
     Write-Host "  -Dir <path>      Install directory (default: ~\peppy_remote)"
     Write-Host "  -Help, -h        Show this help"
     exit 0
+}
+
+trap {
+    Write-Host ""
+    Write-Host "Install failed: $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray }
+    Write-Host ""
+    exit 1
 }
 
 Write-Banner "PeppyMeter Remote Client Installer"
@@ -265,12 +280,65 @@ $packages = @(
 $ErrorActionPreference = $prevErr
 Write-Host "  Python packages installed"
 
+# --- Cairo runtime (Windows; required for full meter: cassette, turntable, basic) ---
+$cairoDir = Join-Path $InstallDir "cairo"
+if ($isWin) {
+    $cairoOk = $false
+    try {
+        & $pythonExe -c "import cairocffi" 2>$null
+        if ($LASTEXITCODE -eq 0) { $cairoOk = $true }
+    } catch {}
+    if (-not $cairoOk) {
+        Write-Host ""
+        Write-Host "Installing Cairo runtime (needed for full meter display)..."
+        $cairoZip = "https://github.com/preshing/cairo-windows/releases/download/1.17.2/cairo-windows-1.17.2.zip"
+        $zipPath = Join-Path $env:TEMP "cairo-windows-1.17.2.zip"
+        $extractDir = Join-Path $env:TEMP "cairo-windows-extract"
+        try {
+            Invoke-WebRequest -Uri $cairoZip -OutFile $zipPath -UseBasicParsing
+            if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+            Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+            $bits = & $pythonExe -c "import struct; print(struct.calcsize('P')*8)" 2>$null
+            if (-not $bits) { $bits = 64 }
+            $dlls = Get-ChildItem -Path $extractDir -Recurse -Filter "cairo.dll" -ErrorAction SilentlyContinue
+            $dll = $null
+            foreach ($f in $dlls) {
+                $pathLower = $f.FullName.ToLowerInvariant()
+                if ($bits -eq 64 -and ($pathLower -match "64|amd64|x64")) { $dll = $f; break }
+                if ($bits -eq 32 -and ($pathLower -notmatch "64|amd64|x64")) { $dll = $f; break }
+            }
+            if (-not $dll -and $dlls.Count -gt 0) { $dll = $dlls[0] }
+            if ($dll) {
+                New-Item -ItemType Directory -Force -Path $cairoDir | Out-Null
+                Copy-Item $dll.FullName (Join-Path $cairoDir "cairo.dll") -Force
+                Copy-Item $dll.FullName (Join-Path $cairoDir "libcairo-2.dll") -Force
+                Write-Host "  Cairo runtime installed to $cairoDir"
+            } else {
+                Write-Host "  Cairo install skipped: no matching cairo.dll in archive"
+            }
+        } catch {
+            Write-Host "  Cairo install failed: $_"
+        } finally {
+            if (Test-Path $zipPath) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
 # --- Launcher script ---
 Write-Host ""
 Write-Host "Creating launcher..."
+$cairoPathLinePs1 = ''
+$cairoPathLineCmd = ''
+if (Test-Path $cairoDir) {
+    $cairoPathLinePs1 = '$env:PATH = "$ScriptDir\cairo;" + $env:PATH'
+    $cairoPathLineCmd = 'set PATH=%SCRIPT_DIR%cairo;%PATH%'
+}
 $launcherPs1 = @"
 # PeppyMeter Remote Client Launcher (Windows)
 `$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
+$cairoPathLinePs1
+`$env:PYTHONUTF8 = "1"
 `$env:PYTHONPATH = "`$ScriptDir\screensaver;`$ScriptDir\screensaver\peppymeter;`$ScriptDir\screensaver\spectrum"
 & "`$ScriptDir\venv\Scripts\python.exe" "`$ScriptDir\peppy_remote.py" @args
 "@
@@ -279,6 +347,8 @@ Set-Content (Join-Path $InstallDir "peppy_remote.ps1") -Value $launcherPs1
 $launcherCmd = @"
 @echo off
 set SCRIPT_DIR=%~dp0
+$cairoPathLineCmd
+set PYTHONUTF8=1
 set PYTHONPATH=%SCRIPT_DIR%screensaver;%SCRIPT_DIR%screensaver\peppymeter;%SCRIPT_DIR%screensaver\spectrum
 "%SCRIPT_DIR%venv\Scripts\python.exe" "%SCRIPT_DIR%peppy_remote.py" %*
 "@

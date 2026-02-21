@@ -57,10 +57,15 @@ irm ... | iex -ArgumentList '-Help'
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`.
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
 6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
-7. **Launchers:** Creates `peppy_remote.cmd` and `peppy_remote.ps1` (both set PYTHONPATH and run the client). Optional Desktop and Start Menu shortcuts: **PeppyMeter Remote** (runs client) and **PeppyMeter Remote (Configure)** (opens setup wizard).
-8. **Config:** Writes `config.json`; use `-Server` to pre-fill the server host.
+7. **Cairo runtime:** If the Cairo C library is not already available, the installer downloads a standalone Cairo DLL (from [preshing/cairo-windows](https://github.com/preshing/cairo-windows)) into `cairo\` and configures the launchers so the client finds it. Required for the full meter (cassette, turntable, basic skins).
+8. **Launchers:** Creates `peppy_remote.cmd` and `peppy_remote.ps1` (PYTHONPATH, PYTHONUTF8=1 for UTF-8, and if Cairo was installed, PATH for `cairo\`). Optional Desktop and Start Menu shortcuts: **PeppyMeter Remote** (runs client) and **PeppyMeter Remote (Configure)** (opens setup wizard).
+9. **Config:** Writes `config.json`; use `-Server` to pre-fill the server host.
+
+**UTF-8 on Windows:** The installer and launchers force UTF-8 (PowerShell output encoding during install; `PYTHONUTF8=1` when running the client) so file and console encoding match Linux and avoid cp950/cp1252 issues. For system-wide UTF-8: Settings > Time & language > Language & region > Administrative language settings > Change system locale > check "Beta: Use Unicode UTF-8 for worldwide language support".
 
 **Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). You can also choose “local” in the wizard and point to a folder on your PC.
+
+**Cairo on Windows:** The installer installs a Cairo runtime when needed. If you still see "no library called cairo" or "cannot load library libcairo-2.dll", see Troubleshooting for manual options (GTK3 Runtime or MSYS2).
 
 **Running the client on Windows:**
 
@@ -408,3 +413,9 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Ensure the Volumio machine and Windows PC are on the same network. Try: `ping volumio.local` or `ping <volumio_ip>`.
 - Run with a fixed server: `.\peppy_remote.cmd --server <volumio_ip_or_hostname>`.
 - Windows Firewall may block UDP discovery; allow the client (or Python) for Private networks if needed.
+
+**Windows - no library called cairo / OSError cairocffi / Falling back to test display:**
+- The installer normally installs a Cairo runtime into `cairo\` and sets PATH in the launcher. If you still see this error, the install step may have failed (e.g. network or archive layout). You can install Cairo manually:
+- Option 1: Install **GTK3 Runtime** (includes Cairo). Download from [GTK for Windows Runtime](https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases), run the installer, and ensure the GTK bin folder is on your system PATH.
+- Option 2: With **MSYS2**, run: `pacman -S mingw-w64-ucrt-x86_64-cairo` (or the 32-bit variant), then add the MSYS2 bin folder to PATH when running the client.
+- After installing Cairo, run `peppy_remote.cmd` again; the full meter should start instead of falling back to test display.
