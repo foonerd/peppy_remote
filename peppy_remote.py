@@ -2211,6 +2211,8 @@ class RemoteSpectrumOutput:
                     sp_config['current'] = {}
                 sp_config['current']['base.folder'] = templates_spectrum_path
                 sp_config['current']['spectrum.folder'] = meter_folder
+                # Ensure Spectrum.__init__ loads only the active section.
+                sp_config['current']['spectrum'] = self.s
                 # Update pipe name to avoid error (won't be used since we don't start data source)
                 sp_config['current']['pipe.name'] = '/tmp/myfifosa'
                 
