@@ -2224,17 +2224,26 @@ class RemoteSpectrumOutput:
             os.chdir(self.SpectrumPath)
             
             try:
+                # Remote-only: avoid IndexError when meter has no spectrum config (e.g. template mismatch).
+                # Check spectrum configs before creating Spectrum (ScreensaverSpectrum.__init__ uses spectrum_configs[0]).
+                from spectrumconfigparser import SpectrumConfigParser, AVAILABLE_SPECTRUM_NAMES as _SP_NAMES
+                _parser = SpectrumConfigParser(standalone=False)
+                _parser.config[_SP_NAMES] = [self.s]
+                _configs = _parser.get_spectrum_configs()
+                if not _configs:
+                    log_client("No spectrum configs available; spectrum not visible in current meter config", "verbose")
+                    return
                 # Create spectrum object (standalone=False for plugin mode)
                 # Note: Spectrum.__init__ calls ScreensaverSpectrum which overwrites util.screen_rect
                 self.sp = Spectrum(self.util, standalone=False)
-                
-                
+                # Use self.sp.s (Spectrum may have fallen back to first available if requested not in template)
+                self.s = self.sp.s
                 # Override dimensions
                 self.sp.config[SCREEN_WIDTH] = self.w
                 self.sp.config[SCREEN_HEIGHT] = self.h
-                
                 # Set spectrum name and reload configs
                 self.sp.config[AVAILABLE_SPECTRUM_NAMES] = [self.s]
+                self.sp.config_parser.config[AVAILABLE_SPECTRUM_NAMES] = [self.s]
                 self.sp.spectrum_configs = self.sp.config_parser.get_spectrum_configs()
                 
                 self.sp.init_spectrums()
