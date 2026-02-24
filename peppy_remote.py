@@ -2320,11 +2320,12 @@ class RemoteSpectrumOutput:
     
     def update(self):
         """Update spectrum from network data and render."""
+        dirty_rects = []
         if not self._initialized or self.sp is None:
             if not hasattr(self, '_dbg_init_warn'):
                 print(f"[RemoteSpectrum] update: not initialized={not self._initialized}, sp={self.sp}")
                 self._dbg_init_warn = True
-            return
+            return dirty_rects
         
         # Get bar heights from network
         bins = self.spectrum_receiver.get_bins()
@@ -2335,7 +2336,7 @@ class RemoteSpectrumOutput:
             self._local_bins = [0.0] * len(self.sp._prev_bar_heights)
         
         if not self._local_bins:
-            return
+            return dirty_rects
         
         # Check if we have new packet data
         new_packet = bins and current_seq != self._last_packet_seq
@@ -2349,23 +2350,8 @@ class RemoteSpectrumOutput:
         _prev_len = len(self.sp._prev_bar_heights) if (hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights) else len(self._local_bins)
         num_bars = min(len(self._local_bins), _prev_len)
         
-        # Track previous server data to detect actual changes
-        if not hasattr(self, '_prev_server_bins'):
-            self._prev_server_bins = None
-        
-        # Check if server sent genuinely different data (not just repeated)
-        server_data_changed = False
-        if bins and self._prev_server_bins:
-            # Consider it "changed" if ANY bin differs by more than 1
-            for i in range(min(len(bins), len(self._prev_server_bins))):
-                if abs(bins[i] - self._prev_server_bins[i]) > 1:
-                    server_data_changed = True
-                    break
-        elif bins and not self._prev_server_bins:
-            server_data_changed = True  # First data
-        
-        if bins:
-            self._prev_server_bins = bins.copy()
+        # Freshness gating by packet sequence is more reliable than value-diff threshold.
+        server_data_changed = bool(new_packet)
         
         # Client-side: ignore "all bars at max" packet (pre-FFT after spectrum reinit); decay and wait for real data
         if bins and len(bins) >= 2:
@@ -2385,13 +2371,14 @@ class RemoteSpectrumOutput:
             if self._local_bins[i] < 0.5:
                 self._local_bins[i] = 0
         
-        # Step 2: Only use server data when it's genuinely NEW and HIGHER
+        # Step 2: Only use server data when packet is NEW and values are HIGHER
         if bins and server_data_changed:
             num_to_copy = min(len(bins), num_bars)
             for i in range(num_to_copy):
                 server_val = bins[i]
                 if server_val > self._local_bins[i]:
                     self._local_bins[i] = server_val  # Instant rise to peak
+            self._last_packet_seq = current_seq
         
         # Step 3: Update visual components (no fade-in; follow server data + decay)
         for i in range(num_bars):
@@ -2421,14 +2408,24 @@ class RemoteSpectrumOutput:
             
             # Clean and draw
             if hasattr(self.sp, '_dirty_rects') and self.sp._dirty_rects:
-                for rect in self.sp._dirty_rects:
+                old_dirty = [r.copy() for r in self.sp._dirty_rects if r]
+                for rect in old_dirty:
                     self.sp.draw_area(rect)
                 self.sp._dirty_rects = []
+                dirty_rects.extend(old_dirty)
             self.sp.draw()
+            
+            # Return spectrum dirty regions for parent's display.update(dirty_rects).
+            if hasattr(self.sp, '_dirty_rects') and self.sp._dirty_rects:
+                dirty_rects.extend([r.copy() for r in self.sp._dirty_rects if r])
+            elif clip_rect:
+                dirty_rects.append(clip_rect.copy())
             
             self.util.pygame_screen.set_clip(prev_clip)
         except Exception:
             pass  # Silently handle draw errors
+        
+        return dirty_rects
     
     def stop_thread(self):
         """Stop spectrum."""
