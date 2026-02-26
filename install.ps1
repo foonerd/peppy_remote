@@ -8,6 +8,9 @@
 #   irm ... | iex -ArgumentList '-Server','volumio'
 #   irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
 #
+# If the one-liner fails (e.g. after winget installs Python/Git), download
+# install.ps1 from the repo and run: powershell -ExecutionPolicy Bypass -File install.ps1
+#
 # Installs to $env:USERPROFILE\peppy_remote by default.
 # Requires: Python 3.8+, Git.
 
@@ -97,6 +100,9 @@ if ($args -contains "-Help" -or $args -contains "-h") {
     Write-Host "  irm ... | iex -ArgumentList '-Server','volumio'"
     Write-Host "  irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'"
     Write-Host ""
+    Write-Host "If the one-liner fails (e.g. after winget installs Python/Git), download install.ps1"
+    Write-Host "from the repo and run:  powershell -ExecutionPolicy Bypass -File install.ps1"
+    Write-Host ""
     Write-Host "Parameters:"
     Write-Host "  -Server <host>   Pre-configure server hostname/IP"
     Write-Host "  -Dir <path>      Install directory (default: ~\peppy_remote)"
@@ -169,10 +175,24 @@ if ($missing.Count -gt 0) {
     $gitOk = Test-GitPresent
     if (-not $py -or -not $gitOk) {
         Write-Host ""
-        Write-Host "Dependencies were installed but may not be visible in this session."
-        Write-Host "Please close this window, open a new PowerShell, then run this script again."
-        Write-Host ""
-        exit 1
+        Write-Host "Dependencies were installed but are not visible in this session."
+        Write-Host "Re-launching installer in a new window (updated PATH)..."
+        $scriptUrl = "$RepoUrl/raw/$RepoBranch/install.ps1"
+        $tempScript = Join-Path $env:TEMP "peppy_remote_install.ps1"
+        try {
+            Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript -UseBasicParsing
+            $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript)
+            if ($Server) { $launchArgs += "-Server"; $launchArgs += $Server }
+            if ($Dir)    { $launchArgs += "-Dir";    $launchArgs += $Dir }
+            Start-Process powershell -ArgumentList $launchArgs -Wait
+            exit 0
+        } catch {
+            Write-Host "Could not re-launch. Please close this window, open a new PowerShell, then run:"
+            Write-Host "  irm $scriptUrl | iex"
+            Write-Host "Or download install.ps1 and run: powershell -ExecutionPolicy Bypass -File install.ps1"
+            Write-Host ""
+            exit 1
+        }
     }
 }
 
