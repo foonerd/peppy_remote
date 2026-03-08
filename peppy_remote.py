@@ -2494,7 +2494,9 @@ def parse_server_meter_state(config_content, templates_path, active_meter_overri
                 if active_meter_override in meters_cfg.sections():
                     chosen_meter = active_meter_override
                 else:
-                    chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
+                    # Keep runtime active meter authoritative to prevent random flip-flop loops.
+                    # Validation mismatch can happen during config/template races.
+                    chosen_meter = active_meter_override
             except Exception:
                 chosen_meter = active_meter_override
         else:
@@ -2615,9 +2617,16 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
                         chosen_meter = active_meter_override
                         print(f"  Using active meter from server: {active_meter_override}")
                     else:
-                        # Meter doesn't exist in this template - use server's meter value or random
-                        log_client(f"Active meter '{active_meter_override}' not found in {meter_folder}, using fallback", "verbose")
-                        chosen_meter = meter_value if meter_value and meter_value != active_meter_override else 'random'
+                        # Deterministic fallback (never "random" for runtime override):
+                        # keep existing concrete meter if valid, otherwise first section.
+                        sections = meters_cfg.sections()
+                        log_client(f"Active meter '{active_meter_override}' not found in {meter_folder}, using deterministic fallback", "verbose")
+                        if meter_value and meter_value in sections and meter_value.lower() != "random" and "," not in meter_value:
+                            chosen_meter = meter_value
+                        elif sections:
+                            chosen_meter = sections[0]
+                        else:
+                            chosen_meter = active_meter_override
                         print(f"  Active meter '{active_meter_override}' not in template, using: {chosen_meter}")
                 except Exception as e:
                     log_client(f"Failed to validate meter: {e}", "verbose")
@@ -3062,9 +3071,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 return False
             if _reload_check_done[0]:
                 return _reload_should_exit[0]
-            active_meter_override = version_listener.new_active_meter
+            active_meter_override = version_listener.new_active_meter or current_version_holder.get('active_meter', '')
             current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
-            current_meter = pm.util.meter_config.get(METER, '') or ''
+            current_meter = current_version_holder.get('active_meter') or (pm.util.meter_config.get(METER, '') or '')
             success, config_content, _ = config_fetcher.fetch()
             if not success or not config_content:
                 _reload_check_done[0] = True
@@ -3115,11 +3124,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     break
                 
                 # Get active_meter override if server sent a new one
-                active_meter_override = version_listener.new_active_meter or pending_active_meter
+                active_meter_override = version_listener.new_active_meter or pending_active_meter or current_version_holder.get('active_meter', '')
                 
                 # Fallback: if we exited without callback (old volumio_peppymeter), check here
                 current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
-                current_meter = pm.util.meter_config.get(METER, '') or ''
+                current_meter = current_version_holder.get('active_meter') or (pm.util.meter_config.get(METER, '') or '')
                 success, config_content, _ = config_fetcher.fetch()
                 if success and config_content:
                     new_meter_folder, new_chosen_meter = parse_server_meter_state(
