@@ -262,6 +262,8 @@ Command-line arguments override config file settings:
 8. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
 9. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
 
+For server random-meter sync, discovery `active_meter` is treated as the runtime authority. The fetched `config.txt` may still contain `meter=random`; that value is config intent, not the immediate runtime meter. This prevents random-meter flip-flop loops during reload decisions.
+
 ## Installation Structure
 
 After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
