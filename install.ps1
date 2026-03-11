@@ -12,7 +12,7 @@
 # install.ps1 from the repo and run: powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # Installs to $env:USERPROFILE\peppy_remote by default.
-# Requires: Python 3.8+, Git.
+# Requires: Python 3.12+, Git.
 
 param(
     [string]$Server = "",
@@ -74,7 +74,12 @@ function Get-PythonCommand {
     foreach ($cmd in @("py -3", "python", "python3")) {
         try {
             $v = Invoke-Expression "$cmd --version 2>&1"
-            if ($v -match "Python 3\.(\d+)") { return $cmd }
+            if ($v -match "Python 3\.(\d+)") {
+                $minor = [int]$Matches[1]
+                if ($minor -ge 12) { return $cmd }
+                # Python found but too old - keep looking
+                Write-Host "  Skipping $cmd (Python 3.$minor - need 3.12+)"
+            }
         } catch {}
     }
     return $null
@@ -119,6 +124,8 @@ function Find-PythonDirect {
             try {
                 $v = & $exe --version 2>&1
                 if ($v -match "Python 3\.(\d+)") {
+                    $minor = [int]$Matches[1]
+                    if ($minor -lt 12) { continue }  # Need 3.12+
                     # Inject into PATH for this session
                     $pyDir = Split-Path $exe
                     if ($env:Path -notlike "*$pyDir*") {
@@ -199,7 +206,7 @@ if (Test-Path $InstallDir) {
 $py = Get-PythonCommand
 $gitOk = Test-GitPresent
 $missing = @()
-if (-not $py) { $missing += "Python 3.8+" }
+if (-not $py) { $missing += "Python 3.12+" }
 if (-not $gitOk) { $missing += "Git" }
 
 if ($missing.Count -gt 0) {
