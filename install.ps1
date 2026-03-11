@@ -450,8 +450,8 @@ if ($isWin) {
 }
 
 # --- Convert SVG icons to ICO for Windows shortcuts ---
-# Uses cairosvg + Pillow from the venv. Multi-size ICO (16, 32, 48, 256) for
-# crisp display at all Windows DPI scaling levels.
+# Uses cairosvg + Pillow from the venv. Renders at 48 and 256 for desktop
+# and start menu shortcuts. Each size rendered directly from SVG for clarity.
 $icoMain = Join-Path $InstallDir "peppy_remote.ico"
 $icoConfig = Join-Path $InstallDir "peppy_remote_config.ico"
 Write-Host ""
@@ -472,12 +472,11 @@ except ImportError as e:
     sys.exit(1)
 
 def svg_to_ico(svg_path, ico_path):
-    sizes = [16, 32, 48, 256]
+    sizes = [48, 256]
     images = []
     for sz in sizes:
         png_data = cairosvg.svg2png(url=svg_path, output_width=sz, output_height=sz)
-        img = Image.open(BytesIO(png_data))
-        img = img.convert('RGBA')
+        img = Image.open(BytesIO(png_data)).convert('RGBA')
         images.append(img)
     images[0].save(ico_path, format='ICO', append_images=images[1:])
 
