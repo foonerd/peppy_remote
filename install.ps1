@@ -91,6 +91,66 @@ function Refresh-EnvPath {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
 
+# Direct path probing - fallback when PATH lookup fails after winget install.
+# winget often installs Python/Git to known locations but the PATH update does
+# not propagate to the current (or even a new) PowerShell session reliably.
+# This probes common install paths directly and injects them into $env:Path.
+function Find-PythonDirect {
+    $userLocal = Join-Path $env:LOCALAPPDATA "Programs\Python"
+    $candidates = @()
+    # winget Python.Python.3.xx installs here
+    if (Test-Path $userLocal) {
+        $candidates += Get-ChildItem $userLocal -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match "^Python3\d+$" } |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName "python.exe" }
+    }
+    # MSI / system-wide installs
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ($pf -and (Test-Path $pf)) {
+            $candidates += Get-ChildItem $pf -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "^Python3\d+$" } |
+                Sort-Object Name -Descending |
+                ForEach-Object { Join-Path $_.FullName "python.exe" }
+        }
+    }
+    foreach ($exe in $candidates) {
+        if (Test-Path $exe) {
+            try {
+                $v = & $exe --version 2>&1
+                if ($v -match "Python 3\.(\d+)") {
+                    # Inject into PATH for this session
+                    $pyDir = Split-Path $exe
+                    if ($env:Path -notlike "*$pyDir*") {
+                        $env:Path = "$pyDir;" + $env:Path
+                    }
+                    return "`"$exe`""
+                }
+            } catch {}
+        }
+    }
+    return $null
+}
+
+function Find-GitDirect {
+    $candidates = @()
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ($pf) { $candidates += Join-Path $pf "Git\cmd\git.exe" }
+    }
+    # winget Git.Git can also land in user-local
+    $candidates += Join-Path $env:LOCALAPPDATA "Programs\Git\cmd\git.exe"
+    foreach ($exe in $candidates) {
+        if (Test-Path $exe) {
+            $gitDir = Split-Path $exe
+            if ($env:Path -notlike "*$gitDir*") {
+                $env:Path = "$gitDir;" + $env:Path
+            }
+            return $true
+        }
+    }
+    return $false
+}
+
 # --- Parse -Help ---
 if ($args -contains "-Help" -or $args -contains "-h") {
     Write-Host "PeppyMeter Remote Client Installer (Windows)"
@@ -169,11 +229,46 @@ if ($missing.Count -gt 0) {
         Write-Host "Installing Git via winget..."
         & winget install --id Git.Git --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
     }
+
+    # Pass 1: refresh PATH from registry and re-check via normal lookup
     Write-Host "Refreshing PATH and re-checking..."
     Refresh-EnvPath
     $py = Get-PythonCommand
     $gitOk = Test-GitPresent
+
+    # Pass 2: if PATH lookup still fails, probe known install directories directly.
+    # winget often updates the registry PATH but the change is not visible to
+    # PowerShell sessions spawned before or shortly after the install completes.
+    if (-not $py) {
+        Write-Host "  Python not on PATH - probing install directories..."
+        $py = Find-PythonDirect
+        if ($py) { Write-Host "  Found Python at: $py" }
+    }
+    if (-not $gitOk) {
+        Write-Host "  Git not on PATH - probing install directories..."
+        $gitOk = Find-GitDirect
+        if ($gitOk) { Write-Host "  Found Git" }
+    }
+
+    # Pass 3: one relaunch attempt only. Guard via environment variable to prevent
+    # infinite loop - the old code had no guard, causing cascading windows.
     if (-not $py -or -not $gitOk) {
+        if ($env:PEPPY_INSTALL_RELAUNCHED -eq "1") {
+            # Already relaunched once - do not loop again
+            Write-Host ""
+            Write-Host "ERROR: Dependencies still not found after relaunch." -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Please install manually, then run this script again:"
+            if (-not $py) { Write-Host "  Python: https://www.python.org/downloads/" }
+            if (-not $py) { Write-Host "     or:  winget install Python.Python.3.12" }
+            if (-not $gitOk) { Write-Host "  Git:    https://git-scm.com/download/win" }
+            if (-not $gitOk) { Write-Host "     or:  winget install Git.Git" }
+            Write-Host ""
+            Write-Host "After installing, close ALL PowerShell windows, open a new one, and run:"
+            Write-Host "  irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex"
+            Write-Host ""
+            exit 1
+        }
         Write-Host ""
         Write-Host "Dependencies were installed but are not visible in this session."
         Write-Host "Re-launching installer in a new window (updated PATH)..."
@@ -184,6 +279,8 @@ if ($missing.Count -gt 0) {
             $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript)
             if ($Server) { $launchArgs += "-Server"; $launchArgs += $Server }
             if ($Dir)    { $launchArgs += "-Dir";    $launchArgs += $Dir }
+            # Set guard so the child process will not relaunch again
+            $env:PEPPY_INSTALL_RELAUNCHED = "1"
             Start-Process powershell -ArgumentList $launchArgs -Wait
             exit 0
         } catch {
