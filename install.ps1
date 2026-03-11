@@ -449,6 +449,65 @@ if ($isWin) {
     }
 }
 
+# --- Convert SVG icons to ICO for Windows shortcuts ---
+# Uses cairosvg + Pillow from the venv. Multi-size ICO (16, 32, 48, 256) for
+# crisp display at all Windows DPI scaling levels.
+$icoMain = Join-Path $InstallDir "peppy_remote.ico"
+$icoConfig = Join-Path $InstallDir "peppy_remote_config.ico"
+Write-Host ""
+Write-Host "Generating Windows icons from SVG..."
+$svgToIco = @"
+import sys, os
+# Ensure cairo DLL is findable if installed
+cairo_dir = os.path.join(r'$InstallDir', 'cairo')
+if os.path.isdir(cairo_dir):
+    os.environ['PATH'] = cairo_dir + os.pathsep + os.environ.get('PATH', '')
+
+try:
+    import cairosvg
+    from PIL import Image
+    from io import BytesIO
+except ImportError as e:
+    print(f'  Icon conversion skipped: {e}')
+    sys.exit(1)
+
+def svg_to_ico(svg_path, ico_path):
+    sizes = [16, 32, 48, 256]
+    images = []
+    for sz in sizes:
+        png_data = cairosvg.svg2png(url=svg_path, output_width=sz, output_height=sz)
+        img = Image.open(BytesIO(png_data))
+        img = img.convert('RGBA')
+        images.append(img)
+    images[0].save(ico_path, format='ICO', append_images=images[1:])
+
+converted = 0
+for svg_name, ico_name in [('peppy_remote.svg', 'peppy_remote.ico'), ('peppy_remote_config.svg', 'peppy_remote_config.ico')]:
+    svg_path = os.path.join(r'$InstallDir', svg_name)
+    ico_path = os.path.join(r'$InstallDir', ico_name)
+    if os.path.isfile(svg_path):
+        try:
+            svg_to_ico(svg_path, ico_path)
+            converted += 1
+        except Exception as e:
+            print(f'  Warning: could not convert {svg_name}: {e}')
+
+print(f'  Converted {converted} icon(s) to ICO')
+"@
+$svgToIcoScript = Join-Path $env:TEMP "peppy_svg_to_ico.py"
+Set-Content $svgToIcoScript -Value $svgToIco -Encoding UTF8
+try {
+    # Cairo DLL must be on PATH for cairosvg
+    $prevPath = $env:PATH
+    if (Test-Path $cairoDir) { $env:PATH = "$cairoDir;$env:PATH" }
+    & $pythonExe $svgToIcoScript 2>&1 | ForEach-Object { Write-Host $_ }
+    $env:PATH = $prevPath
+} catch {
+    Write-Host "  Icon conversion failed: $_ (shortcuts will use default icon)"
+} finally {
+    Remove-Item $svgToIcoScript -Force -ErrorAction SilentlyContinue
+}
+
 # --- Launcher script ---
 Write-Host ""
 Write-Host "Creating launcher..."
@@ -511,6 +570,9 @@ if ($Server) { Write-Host "  Server pre-configured: $Server" } else { Write-Host
 # --- Shortcuts (optional) ---
 $desktop = [Environment]::GetFolderPath("Desktop")
 $startMenu = [Environment]::GetFolderPath("StartMenu")
+# ICO paths for shortcuts (graceful fallback if conversion failed)
+$icoMainPath = if (Test-Path $icoMain) { "$icoMain,0" } else { "" }
+$icoConfigPath = if (Test-Path $icoConfig) { "$icoConfig,0" } else { "" }
 if ($desktop -or $startMenu) {
     Write-Host ""
     Write-Host "Creating shortcuts..."
@@ -522,11 +584,13 @@ if ($desktop -or $startMenu) {
             $lnk.TargetPath = $cmdPath
             $lnk.Arguments = "--windowed"
             $lnk.WorkingDirectory = $InstallDir
+            if ($icoMainPath) { $lnk.IconLocation = $icoMainPath }
             $lnk.Save()
             $lnkConfig = $ws.CreateShortcut((Join-Path $desktop "PeppyMeter Remote (Configure).lnk"))
             $lnkConfig.TargetPath = $cmdPath
             $lnkConfig.Arguments = "--config"
             $lnkConfig.WorkingDirectory = $InstallDir
+            if ($icoConfigPath) { $lnkConfig.IconLocation = $icoConfigPath }
             $lnkConfig.Save()
         }
         if ($startMenu) {
@@ -536,14 +600,16 @@ if ($desktop -or $startMenu) {
             $lnk2.TargetPath = $cmdPath
             $lnk2.Arguments = "--windowed"
             $lnk2.WorkingDirectory = $InstallDir
+            if ($icoMainPath) { $lnk2.IconLocation = $icoMainPath }
             $lnk2.Save()
             $lnk2Config = $ws.CreateShortcut((Join-Path $smDir "PeppyMeter Remote (Configure).lnk"))
             $lnk2Config.TargetPath = $cmdPath
             $lnk2Config.Arguments = "--config"
             $lnk2Config.WorkingDirectory = $InstallDir
+            if ($icoConfigPath) { $lnk2Config.IconLocation = $icoConfigPath }
             $lnk2Config.Save()
         }
-        Write-Host "  Shortcuts created"
+        Write-Host "  Shortcuts created (with custom icons)" 
     } catch {
         Write-Host "  Shortcuts skipped: $_"
     }
