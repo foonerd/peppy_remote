@@ -30,7 +30,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 **What the Linux installer does:**
 
-1. **Dependencies:** Installs `python3`, `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
+1. **Dependencies:** Installs `python3` (3.12+ required; must match server), `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
 2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
 3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the repo.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
@@ -45,7 +45,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 ### Windows
 
-**Prerequisites:** Windows 10 or 11. The installer needs **Python 3.8+** and **Git**. If either is missing, the script will check, list what’s missing, and ask: *“Install missing dependencies via winget? [Y/n]”*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
+**Prerequisites:** Windows 10 or 11. The installer needs **Python 3.12+** and **Git** (Python version must match the server; Volumio uses 3.12). If either is missing, the script will check, list what’s missing, and ask: *“Install missing dependencies via winget? [Y/n]”*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
 
 **First-time PowerShell:** You may need to allow script execution once:
 
@@ -74,7 +74,7 @@ irm ... | iex -ArgumentList '-Help'
 
 **What the installer does:**
 
-1. **Dependencies:** Checks for Python 3.8+ and Git. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
+1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
 2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
 3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the repo.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`.
@@ -271,10 +271,10 @@ Command-line arguments override config file settings:
 
 ## Requirements
 
-- **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.). The client can run on a Pi as a remote display; use windowed or fullscreen and avoid heavy spectrum templates if CPU is limited.
-- **Windows**: Windows 10/11, Python 3.8+, Git; templates use UNC paths (no SMB mount)
+- **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.). **Python 3.12+** required; version must match the server (Volumio uses 3.12). The client can run on a Pi as a remote display; use windowed or fullscreen and avoid heavy spectrum templates if CPU is limited.
+- **Windows**: Windows 10/11, **Python 3.12+**, Git; templates use UNC paths (no SMB mount)
 - Network access to Volumio box
-- Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin v3.2.6+ with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery)
+- Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin **v3.3.0 or higher** with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery)
 - **Linux GUI wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
 
 ## Network Ports
@@ -368,7 +368,7 @@ If a format icon isn't available locally or on the server, the format name is di
 
 ## Server Setup
 
-On your Volumio box (requires [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin v3.2.6+ with protocol v3):
+On your Volumio box (requires [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin **v3.3.0 or higher**):
 
 1. Go to **Settings > Plugins > PeppyMeter Screensaver > Settings**
 2. Under **Remote Display Settings**, enable **Enable Remote Server**
