@@ -478,7 +478,7 @@ def svg_to_ico(svg_path, ico_path):
         png_data = cairosvg.svg2png(url=svg_path, output_width=sz, output_height=sz)
         img = Image.open(BytesIO(png_data)).convert('RGBA')
         images.append(img)
-    images[0].save(ico_path, format='ICO', append_images=images[1:])
+    images[0].save(ico_path, format='ICO', append_images=images[1:], sizes=[(48, 48), (256, 256)])
 
 converted = 0
 for svg_name, ico_name in [('peppy_remote.svg', 'peppy_remote.ico'), ('peppy_remote_config.svg', 'peppy_remote_config.ico')]:
