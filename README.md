@@ -1,8 +1,10 @@
 # PeppyMeter Remote Client
 
-Display PeppyMeter visualizations on any Debian-based system by connecting to a Volumio server running the PeppyMeter plugin.
+Remote display client for the [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) Volumio plugin. Display PeppyMeter visualizations on any Debian-based system (or Windows) by connecting to a Volumio server running the plugin.
 
 This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server’s first announcement before starting the meter (syncing screen). By default it syncs to the server’s theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
+
+**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Auto-discovery, config wizard, SMB or local templates, windowed/frameless/fullscreen modes.
 
 ## Quick Install
 
@@ -18,7 +20,28 @@ With server pre-configured:
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server volumio
 ```
 
-On desktop systems, the installer adds two launchers: **PeppyMeter Remote** (start client) and **PeppyMeter Remote (Configure)** (wrench icon, opens the setup wizard).
+With custom install directory:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --dir /opt/peppy_remote
+```
+
+Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
+
+**What the Linux installer does:**
+
+1. **Dependencies:** Installs `python3`, `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
+2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the repo.
+4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
+5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons from peppy_screensaver into `screensaver/`.
+6. **Fonts:** Downloads bundled fonts to `screensaver/fonts/` so themes render correctly.
+7. **Patches:** Patches handler files to use local format icons first for all formats.
+8. **Python env:** Creates a virtual environment in `venv/` and installs required packages (pygame, pillow, python-socketio, cairosvg, etc.).
+9. **Launcher:** Creates `peppy_remote` script that activates venv, sets PYTHONPATH, and runs `peppy_remote.py`.
+10. **Sudoers:** Creates `/etc/sudoers.d/peppy_remote` for passwordless SMB mount/umount.
+11. **Config:** Writes `config.json`; use `--server` to pre-fill the server host.
+12. **Desktop shortcuts:** If `~/.local/share/applications` exists, creates **PeppyMeter Remote** (start client) and **PeppyMeter Remote (Configure)** (wrench icon, opens setup wizard).
 
 ### Windows
 
@@ -85,7 +108,7 @@ Or double-click **PeppyMeter Remote** (or **PeppyMeter Remote (Configure)**) on 
 
 ## Usage
 
-After installation, run (on Linux use `~/peppy_remote/peppy_remote`; on Windows use `.\peppy_remote.cmd` from the install folder, e.g. `%USERPROFILE%\peppy_remote`):
+After installation, run the client (on Linux use `~/peppy_remote/peppy_remote` or your install path if you used `--dir`; on Windows use `.\peppy_remote.cmd` from the install folder, e.g. `%USERPROFILE%\peppy_remote`):
 
 ```bash
 # Auto-discover server on network
@@ -149,10 +172,12 @@ To lock this client to a specific meter theme (e.g. one display always showing t
 | **Frameless** | No window decorations, fixed position | Kiosk displays, embedded |
 | **Fullscreen** | Full screen on selected monitor | Dedicated displays |
 
+**Windowed** and **Fullscreen** are set via the wizard or `--windowed` / `--fullscreen`. **Frameless** is set by editing `config.json`: set `display.windowed` to `false` and `display.fullscreen` to `false` and optionally set `display.position` to `[x, y]`.
+
 Command-line overrides:
 ```bash
 ~/peppy_remote/peppy_remote --windowed      # Movable window
-~/peppy_remote/peppy_remote --fullscreen    # Full screen
+~/peppy_remote/peppy_remote --fullscreen   # Full screen
 ```
 
 ### Configuration File
@@ -203,6 +228,13 @@ Settings are stored in `~/peppy_remote/config.json`:
 | server | host | null | Server hostname/IP (null = auto-discover) |
 | server | level_port | 5580 | UDP port for meter level data |
 | server | spectrum_port | 5581 | UDP port for spectrum FFT data |
+| server | volumio_port | 3000 | Volumio socket.io port |
+| server | discovery_port | 5579 | UDP port for discovery broadcasts |
+| server | discovery_timeout | 10 | Seconds to wait for discovery before timeout |
+| display | windowed | true | Movable window with title bar |
+| display | fullscreen | false | Full screen mode |
+| display | position | null | Window position [x, y] or null (centered) |
+| display | monitor | 0 | Monitor index for fullscreen |
 | display | meter_folder | null | Kiosk: template folder (e.g. `1920x720_5skins`); null = use server theme |
 | display | meter | null | Kiosk: meter section name, `"random"`, or comma-separated list; null = use server theme |
 | templates | use_smb | true | Mount templates from server via SMB |
@@ -217,23 +249,32 @@ Settings are stored in `~/peppy_remote/config.json`:
 Command-line arguments override config file settings:
 
 ```bash
+# Server and ports
+~/peppy_remote/peppy_remote --server volumio
+~/peppy_remote/peppy_remote --level-port 5580 --spectrum-port 5581 --volumio-port 3000
+~/peppy_remote/peppy_remote --discovery-timeout 15
+
+# Display
+~/peppy_remote/peppy_remote --windowed
+~/peppy_remote/peppy_remote --fullscreen
+
+# Templates (skip SMB mount)
+~/peppy_remote/peppy_remote --no-mount --templates /path/to/templates --spectrum-templates /path/to/spectrum
+
 # Debugging
 ~/peppy_remote/peppy_remote --debug verbose
-~/peppy_remote/peppy_remote --debug trace --trace-spectrum
+~/peppy_remote/peppy_remote --debug trace --trace-spectrum --trace-network --trace-config
 
 # Spectrum tuning
 ~/peppy_remote/peppy_remote --decay-rate 0.97
-
-# Local templates (skip SMB)
-~/peppy_remote/peppy_remote --templates /path/to/templates --spectrum-templates /path/to/spectrum
 ```
 
 ## Requirements
 
-- **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.)
-- **Windows** (optional): Windows 10/11, Python 3.8+, Git; templates use UNC paths (no SMB mount)
+- **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.). The client can run on a Pi as a remote display; use windowed or fullscreen and avoid heavy spectrum templates if CPU is limited.
+- **Windows**: Windows 10/11, Python 3.8+, Git; templates use UNC paths (no SMB mount)
 - Network access to Volumio box
-- Volumio must have PeppyMeter plugin with "Remote Display Server" enabled
+- Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin v3.2.6+ with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery)
 - **Linux GUI wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
 
 ## Network Ports
@@ -258,13 +299,16 @@ Command-line arguments override config file settings:
 4. **Templates**: Mounts template skins from server via SMB (or uses local/UNC paths if configured).
 5. **Audio Levels**: Receives real-time level data via UDP (port 5580).
 6. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations.
-7. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art, playback state.
-8. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
-9. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
+7. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art URLs, playback state.
+8. **Album art and vinyl**: Album art is fetched via HTTP from Volumio (or from local paths when using SMB templates). Vinyl images use the server's `getVinylImage` endpoint when configured.
+9. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
+10. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
 
 For server random-meter sync, discovery `active_meter` is treated as the runtime authority. The fetched `config.txt` may still contain `meter=random`; that value is config intent, not the immediate runtime meter. This prevents random-meter flip-flop loops during reload decisions.
 
 ## Installation Structure
+
+Handlers and format icons are downloaded from the [peppy_screensaver](https://github.com/foonerd/peppy_screensaver) repo (main branch). PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
 
 After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
 
@@ -324,14 +368,15 @@ If a format icon isn't available locally or on the server, the format name is di
 
 ## Server Setup
 
-On your Volumio box:
+On your Volumio box (requires [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin v3.2.6+ with protocol v3):
 
-1. Go to plugin settings for PeppyMeter
-2. Enable "Remote Display Server"
-3. Choose server mode:
-   - **Server Only**: Headless, only streams data (no local display)
-   - **Server + Local**: Streams data AND shows local display
-4. Save settings
+1. Go to **Settings > Plugins > PeppyMeter Screensaver > Settings**
+2. Under **Remote Display Settings**, enable **Enable Remote Server**
+3. Choose **Server Mode**:
+   - **Server Only**: Headless — no local display, only streams data. Use when the Volumio box has no display (e.g. dedicated server). Saves CPU and avoids spectrum pipe contention.
+   - **Server + Local**: Streams data AND shows visualization locally (default)
+4. Optionally adjust **Level Port** (5580), **Discovery Port** (5579), and **Config Sync Interval** (default 1 s). Config sync controls how quickly clients detect config/theme changes.
+5. Save settings
 
 ## Uninstall
 
@@ -388,6 +433,9 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 
 **Theme restarts or flicker when server hasn’t changed:**
 - The client only reloads when the **theme folder** or **theme name** would change. If you see “Config/folder+theme unchanged, continuing.” in the log, the meter correctly did not restart. If restarts still happen, check that the server plugin is up to date (protocol v3 with `active_meter` in discovery).
+
+**Server Only mode — EADDRINUSE on restart:**
+- In Server Only (headless) mode, the plugin closes UDP sockets and the spectrum pipe on shutdown so the next start can bind cleanly. If you see "Address already in use" after a restart, ensure the previous PeppyMeter process has fully exited (check `ps` for volumio_peppymeter or peppy processes).
 
 **Display issues ("windows not available"):**
 - Ensure DISPLAY environment variable is set: `echo $DISPLAY`
