@@ -1566,6 +1566,7 @@ def _fetch_format_icon(fmt, icons_dir, server_ip, volumio_port):
 # Fonts required by handlers (font.path + light/regular/bold; digi hardcoded as DSEG7Classic-Italic.ttf)
 KNOWN_PEPPY_FONTS = [
     'Lato-Light.ttf', 'Lato-Regular.ttf', 'Lato-Bold.ttf',
+    'PeppyFont-Light.ttf', 'PeppyFont-Regular.ttf', 'PeppyFont-Bold.ttf',
     'DSEG7Classic-Italic.ttf',
 ]
 
@@ -1579,10 +1580,16 @@ def setup_fonts(screensaver_path, server_ip, volumio_port=3000):
     """
     fonts_dir = os.path.join(screensaver_path, 'fonts')
     os.makedirs(fonts_dir, exist_ok=True)
+    log_client("--- Font Setup ---", "basic")
     for filename in KNOWN_PEPPY_FONTS:
         local_path = os.path.join(fonts_dir, filename)
-        if not os.path.exists(local_path):
-            if not _fetch_font(filename, fonts_dir, server_ip, volumio_port):
+        if os.path.exists(local_path):
+            log_client(f"  {filename}: present", "basic")
+        else:
+            if _fetch_font(filename, fonts_dir, server_ip, volumio_port):
+                log_client(f"  {filename}: fetched from server", "basic")
+            else:
+                log_client(f"  {filename}: MISSING", "basic")
                 print(f"  Required font missing: {filename}")
 
 
@@ -2830,6 +2837,15 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         init_debug_config(meter_config_volumio)
         log_debug("=== PeppyMeter Remote Client starting ===", "basic")
         
+        # Log effective font configuration (visible via remote's own debug)
+        _use_sys = meter_config_volumio.get('use.system.fonts', False)
+        _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
+        log_client(f"--- Font Mode: {_font_mode} ---", "basic")
+        log_client(f"  font.path = {meter_config_volumio.get('font.path', '')}", "basic")
+        log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
+        log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
+        log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
+        
         # Replace data source with remote data source
         print("Connecting remote data source...")
         remote_ds = RemoteDataSource(level_receiver)
@@ -2973,6 +2989,12 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             parser = Volumio_ConfigFileParser(pm.util)
             meter_config_volumio = parser.meter_config_volumio
             init_debug_config(meter_config_volumio)
+            _use_sys = meter_config_volumio.get('use.system.fonts', False)
+            _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
+            log_client(f"--- Font Mode (sync): {_font_mode} ---", "basic")
+            log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
+            log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
+            log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
             pm.data_source = remote_ds
             if hasattr(pm, 'meter') and pm.meter:
                 pm.meter.data_source = remote_ds
@@ -3160,6 +3182,12 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 parser = Volumio_ConfigFileParser(pm.util)
                 meter_config_volumio = parser.meter_config_volumio
                 init_debug_config(meter_config_volumio)
+                _use_sys = meter_config_volumio.get('use.system.fonts', False)
+                _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
+                log_client(f"--- Font Mode (reload): {_font_mode} ---", "basic")
+                log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
+                log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
+                log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
                 pm.data_source = remote_ds
                 if hasattr(pm, 'meter') and pm.meter:
                     pm.meter.data_source = remote_ds
