@@ -65,20 +65,14 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex
 ```
 
-**With options** (pass after the one-liner):
+**With options** (download the script first, then run with parameters; `iex` cannot pass arguments):
 
 ```powershell
-# Pre-configure server hostname or IP
-irm ... | iex -ArgumentList '-Server','volumio'
-
-# Custom install directory (default is your user profile\peppy_remote)
-irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
-
-# Peppy screensaver branch (default: main), e.g. experimental
-irm ... | iex -ArgumentList '-b','experimental'
-
-# Help
-irm ... | iex -ArgumentList '-Help'
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
+.\install.ps1 -Server volumio
+.\install.ps1 -Dir C:\peppy_remote
+.\install.ps1 -b experimental   # peppy_screensaver branch (default: main)
+.\install.ps1 -Help
 ```
 
 **What the installer does:**

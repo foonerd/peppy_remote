@@ -4,10 +4,11 @@
 #   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser  # once, if needed
 #   irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex
 #
-# Or with parameters:
-#   irm ... | iex -ArgumentList '-Server','volumio'
-#   irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
-#   irm ... | iex -ArgumentList '-b','experimental'   # peppy_screensaver branch (default: main)
+# With parameters (download first, then run - iex does not accept -ArgumentList):
+#   irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
+#   .\install.ps1 -Server volumio
+#   .\install.ps1 -Dir C:\peppy_remote
+#   .\install.ps1 -b experimental   # peppy_screensaver branch (default: main)
 #
 # If the one-liner fails (e.g. after winget installs Python/Git), download
 # install.ps1 from the repo and run: powershell -ExecutionPolicy Bypass -File install.ps1
