@@ -7,6 +7,7 @@
 # Or with parameters:
 #   irm ... | iex -ArgumentList '-Server','volumio'
 #   irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
+#   irm ... | iex -ArgumentList '-b','experimental'   # peppy_screensaver branch (default: main)
 #
 # If the one-liner fails (e.g. after winget installs Python/Git), download
 # install.ps1 from the repo and run: powershell -ExecutionPolicy Bypass -File install.ps1
@@ -16,7 +17,8 @@
 
 param(
     [string]$Server = "",
-    [string]$Dir = ""
+    [string]$Dir = "",
+    [Alias('b')][string]$ScreensaverBranch = "main"
 )
 
 # Require TLS 1.2 for GitHub/HTTPS on Windows 10 (default .NET protocol can fail)
@@ -174,6 +176,7 @@ if ($args -contains "-Help" -or $args -contains "-h") {
     Write-Host "Parameters:"
     Write-Host "  -Server <host>   Pre-configure server hostname/IP"
     Write-Host "  -Dir <path>      Install directory (default: ~\peppy_remote)"
+    Write-Host "  -b <branch>      Peppy screensaver branch (default: main)"
     Write-Host "  -Help, -h        Show this help"
     exit 0
 }
@@ -189,6 +192,7 @@ trap {
 Write-Banner "PeppyMeter Remote Client Installer"
 Write-Host "Install directory: $InstallDir"
 if ($Server) { Write-Host "Server: $Server" }
+if ($ScreensaverBranch -ne "main") { Write-Host "Screensaver branch: $ScreensaverBranch" }
 Write-Host ""
 
 # --- Existing install ---
@@ -344,7 +348,7 @@ if (Test-Path $specDir) {
 # --- Download Volumio handlers ---
 Write-Host ""
 Write-Host "Downloading Volumio handlers..."
-$volBase = "$ScreensaverRepoUrl/raw/$RepoBranch/volumio_peppymeter"
+$volBase = "$ScreensaverRepoUrl/raw/$ScreensaverBranch/volumio_peppymeter"
 foreach ($f in $VolumioFiles) {
     Download-File "$volBase/$f" (Join-Path $InstallDir "screensaver\$f")
 }

@@ -21,6 +21,7 @@ REPO_URL="https://github.com/foonerd/peppy_remote"
 REPO_BRANCH="main"
 # Legacy repo for volumio_peppymeter handlers (until moved to peppy_remote)
 SCREENSAVER_REPO_URL="https://github.com/foonerd/peppy_screensaver"
+SCREENSAVER_REPO_BRANCH="main"
 PEPPYMETER_REPO="https://github.com/foonerd/PeppyMeter"
 INSTALL_DIR="${PEPPY_REMOTE_DIR:-$HOME/peppy_remote}"
 SERVER_HOST=""
@@ -38,6 +39,10 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR="$2"
             shift 2
             ;;
+        --branch|-b)
+            SCREENSAVER_REPO_BRANCH="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "PeppyMeter Remote Client Installer"
             echo ""
@@ -48,6 +53,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --server, -s <host>   Pre-configure server hostname/IP"
             echo "  --dir, -d <path>      Install directory (default: ~/peppy_remote)"
+            echo "  --branch, -b <name>  Peppy screensaver branch (default: main)"
             echo "  --help, -h            Show this help"
             echo ""
             echo "Environment variables:"
@@ -72,6 +78,9 @@ echo ""
 echo "Install directory: $INSTALL_DIR"
 if [ -n "$SERVER_HOST" ]; then
     echo "Server: $SERVER_HOST"
+fi
+if [ "$SCREENSAVER_REPO_BRANCH" != "main" ]; then
+    echo "Screensaver branch: $SCREENSAVER_REPO_BRANCH"
 fi
 echo ""
 
@@ -231,7 +240,7 @@ VOLUMIO_FILES=(
 # Download Volumio handlers from peppy_screensaver repo (until migrated)
 for file in "${VOLUMIO_FILES[@]}"; do
     echo "  Downloading: $file"
-    curl -sSL "$SCREENSAVER_REPO_URL/raw/$REPO_BRANCH/volumio_peppymeter/$file" -o "$INSTALL_DIR/screensaver/$file"
+    curl -sSL "$SCREENSAVER_REPO_URL/raw/$SCREENSAVER_REPO_BRANCH/volumio_peppymeter/$file" -o "$INSTALL_DIR/screensaver/$file"
 done
 
 # Download fonts from peppy_remote repo (full set for remote client)

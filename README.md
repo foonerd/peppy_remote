@@ -26,6 +26,12 @@ With custom install directory:
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --dir /opt/peppy_remote
 ```
 
+Use a specific **peppy_screensaver** branch (e.g. `experimental`) for Volumio handlers; default is `main`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- -b experimental
+```
+
 Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
 
 **What the Linux installer does:**
@@ -34,7 +40,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
 3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the repo.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
-5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons from peppy_screensaver into `screensaver/`.
+5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from peppy_screensaver into `screensaver/` (use `-b <branch>` to pick a branch; default is `main`).
 6. **Fonts:** Downloads bundled fonts to `screensaver/fonts/` so themes render correctly.
 7. **Patches:** Patches handler files to use local format icons first for all formats.
 8. **Python env:** Creates a virtual environment in `venv/` and installs required packages (pygame, pillow, python-socketio, cairosvg, etc.).
@@ -68,6 +74,9 @@ irm ... | iex -ArgumentList '-Server','volumio'
 # Custom install directory (default is your user profile\peppy_remote)
 irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'
 
+# Peppy screensaver branch (default: main), e.g. experimental
+irm ... | iex -ArgumentList '-b','experimental'
+
 # Help
 irm ... | iex -ArgumentList '-Help'
 ```
@@ -77,7 +86,7 @@ irm ... | iex -ArgumentList '-Help'
 1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
 2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
 3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the repo.
-4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`.
+4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from peppy_screensaver (use `-b <branch>` for a different branch; default is `main`).
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
 6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
 7. **Cairo runtime:** If the Cairo C library is not already available, the installer downloads a standalone Cairo DLL (from [preshing/cairo-windows](https://github.com/preshing/cairo-windows)) into `cairo\` and configures the launchers so the client finds it. Required for the full meter (cassette, turntable, basic skins).
