@@ -1320,9 +1320,9 @@ class ConfigFetcher:
 
 
 # =============================================================================
-# Persist Manager - manages /tmp/peppy_persist for countdown display
+# Persist Manager - manages peppy_persist in system temp dir (countdown display)
 # =============================================================================
-PERSIST_FILE = '/tmp/peppy_persist'
+PERSIST_FILE = os.path.join(tempfile.gettempdir(), 'peppy_persist')
 
 class PersistManager:
     """
