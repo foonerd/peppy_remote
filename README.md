@@ -75,6 +75,15 @@ irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -Out
 .\install.ps1 -Help
 ```
 
+**Alternative: from Command Prompt (cmd.exe)** — if the above fails in PowerShell (e.g. execution policy or encoding), run from Command Prompt:
+
+```cmd
+cd %USERPROFILE%\AppData\Local\Temp
+powershell -ExecutionPolicy Bypass -File install.ps1 -b experimental
+```
+
+Download `install.ps1` to that folder first (e.g. via browser or `curl`), or run the download from PowerShell once: `irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile %USERPROFILE%\AppData\Local\Temp\install.ps1`.
+
 **What the installer does:**
 
 1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
@@ -89,7 +98,7 @@ irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -Out
 
 **UTF-8 on Windows:** The installer and launchers force UTF-8 (PowerShell output encoding during install; `PYTHONUTF8=1` when running the client) so file and console encoding match Linux and avoid cp950/cp1252 issues. For system-wide UTF-8: Settings > Time & language > Language & region > Administrative language settings > Change system locale > check "Beta: Use Unicode UTF-8 for worldwide language support".
 
-**Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). You can also choose “local” in the wizard and point to a folder on your PC.
+**Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). In the wizard, when you choose SMB, use **Mount now** to test the UNC path; on success the Meter theme step will list server themes. You can also choose “local” in the wizard and point to a folder on your PC.
 
 **Cairo on Windows:** The installer installs a Cairo runtime when needed. If you still see "no library called cairo" or "cannot load library libcairo-2.dll", see Troubleshooting for manual options (GTK3 Runtime or MSYS2).
 
@@ -143,7 +152,7 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config
 ```
 
-- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths) → **Meter theme** (use server theme or fixed/kiosk: folder + fixed meter, random from folder, or random from list) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
+- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths; **Mount now** to connect so the next step can list server themes — Linux: mount SMB; Windows: test UNC) → **Meter theme** (use server theme or fixed/kiosk: folder + fixed meter, random from folder, or random from list) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
 - **Without a display** (e.g. SSH): Falls back to the **terminal (text) wizard** in the same session.
 - **Terminal-only wizard:** Use `--config-text` to force the text-based wizard and skip the GUI:
 
@@ -156,7 +165,7 @@ On first run, if you launch from a desktop shortcut, the GUI wizard opens automa
 The wizard configures:
 - Server (auto-discover, enter hostname, or enter IP; after discovery you can choose “Use hostname” or “Use IP address” for the selected server)
 - Display mode (windowed, fullscreen)
-- Template sources (SMB mount or local paths with optional Browse)
+- Template sources (SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes in the next step)
 - **Meter theme**: Use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
 - Spectrum decay rate
 - Debug level and trace options
@@ -240,7 +249,7 @@ Settings are stored in `~/peppy_remote/config.json`:
 | display | monitor | 0 | Monitor index for fullscreen |
 | display | meter_folder | null | Kiosk: template folder (e.g. `1920x720_5skins`); null = use server theme |
 | display | meter | null | Kiosk: meter section name, `"random"`, or comma-separated list; null = use server theme |
-| templates | use_smb | true | Mount templates from server via SMB |
+| templates | use_smb | true | Templates from server (Linux: SMB mount; Windows: UNC paths). Use **Mount now** in the wizard to list server themes. |
 | templates | local_path | null | Local meter templates path |
 | templates | spectrum_local_path | null | Local spectrum templates path |
 | spectrum | decay_rate | 0.95 | Bar decay per frame (0.85=fast, 0.98=slow) |
