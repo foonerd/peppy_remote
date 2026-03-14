@@ -26,6 +26,8 @@ Usage:
     peppy_remote --test             # Simple test display
 """
 
+__version__ = "3.3.1"  # Footlocked to PeppyMeter Screensaver release
+
 import argparse
 import json
 import logging
@@ -3520,8 +3522,14 @@ def main():
                        help='Enable per-packet spectrum trace logging')
     parser.add_argument('--trace-network', action='store_true',
                        help='Enable network connection trace logging')
+    parser.add_argument('--version', '-V', action='store_true',
+                       help='Show version and exit')
     
     args = parser.parse_args()
+    
+    if args.version:
+        print(f"peppy_remote {__version__}")
+        sys.exit(0)
     
     # Run configuration wizard if requested OR on first run (only if we have a terminal)
     run_wizard = args.config or args.config_text
