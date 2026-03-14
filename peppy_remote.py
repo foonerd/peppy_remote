@@ -815,6 +815,70 @@ def run_wizard_ui(initial_config=None):
         if path:
             spectrum_local_var.set(path)
     ttk.Button(spectrum_path_row, text="Browse…", width=8, command=browse_spectrum_path).pack(side=tk.LEFT)
+    # Resolved SMB templates path after successful "Mount now" (Linux: mnt/templates, Windows: UNC)
+    wizard_smb_templates_path = [None]
+    # SMB "Mount now" row (shown when SMB is selected; same on Linux and Windows)
+    smb_mount_row = ttk.Frame(templates_frame)
+    mount_status_var = tk.StringVar(value="Not mounted")
+    lbl_mount_status = ttk.Label(smb_mount_row, textvariable=mount_status_var, font=('', 9), foreground='#555')
+    def _wizard_server_host():
+        """Return current server host from wizard state, or None if not set."""
+        mode = server_mode_var.get()
+        if mode == "hostname":
+            return (hostname_var.get() or "").strip() or None
+        if mode == "ip":
+            return (ip_var.get() or "").strip() or None
+        sel = lb.curselection()
+        if sel and discovered and 0 <= sel[0] < len(discovered):
+            s = discovered[sel[0]]
+            return s.get("hostname", s["ip"]) if use_hostname_var.get() else s["ip"]
+        return None
+    def _do_smb_mount():
+        host = _wizard_server_host()
+        if not host:
+            mount_status_var.set("Select a server first (Step 1)")
+            return
+        mount_status_var.set("Mounting…")
+        btn_mount_now.config(state=tk.DISABLED)
+        def run_mount():
+            ok = False
+            path = None
+            msg = ""
+            try:
+                if sys.platform == 'win32':
+                    server_info = {'hostname': host, 'ip': host}
+                    unc_templates, _ = _unc_paths_for_windows(server_info)
+                    if unc_templates and os.path.isdir(unc_templates):
+                        path = unc_templates
+                        ok = True
+                        msg = "Connected"
+                    else:
+                        msg = "Could not access server templates (check SMB share and network)"
+                else:
+                    smb = SMBMount(host)
+                    ok = smb.mount()
+                    if ok:
+                        path = os.path.join(SCRIPT_DIR, "mnt", "templates")
+                    msg = "Mounted" if ok else ("Mount failed (check server and sudo)")
+            except Exception as e:
+                msg = f"Mount failed: {e}"
+            root.after(0, lambda: _mount_done(ok, msg, path))
+        def _mount_done(ok, msg, path=None):
+            mount_status_var.set(msg)
+            btn_mount_now.config(state=tk.NORMAL)
+            wizard_smb_templates_path[0] = path if ok else None
+        t = threading.Thread(target=run_mount, daemon=True)
+        t.start()
+    btn_mount_now = ttk.Button(smb_mount_row, text="Mount now", width=10, command=_do_smb_mount)
+    btn_mount_now.pack(side=tk.LEFT, padx=(0, 8))
+    lbl_mount_status.pack(side=tk.LEFT)
+    def _on_smb_choice():
+        if use_smb_var.get():
+            smb_mount_row.pack(anchor=tk.W, pady=(10, 0))
+        else:
+            smb_mount_row.pack_forget()
+    use_smb_var.trace_add("write", lambda *_: _on_smb_choice())
+    _on_smb_choice()
     steps.append(templates_frame)
 
     # ----- Step 4: Theme (kiosk / fixed meter) -----
@@ -838,6 +902,12 @@ def run_wizard_ui(initial_config=None):
     theme_meter_var = tk.StringVar(value=config["display"].get("meter") or "")
     theme_meter_list_var = tk.Variable(value=[])
     def _theme_templates_path():
+        if use_smb_var.get():
+            if wizard_smb_templates_path[0] and os.path.isdir(wizard_smb_templates_path[0]):
+                return wizard_smb_templates_path[0]
+            smb_path = os.path.join(SCRIPT_DIR, "mnt", "templates")
+            if os.path.isdir(smb_path):
+                return smb_path
         return (local_path_var.get() or "").strip() or os.path.join(SCRIPT_DIR, "data", "templates")
     def _refresh_theme_folders():
         path = _theme_templates_path()
@@ -1030,6 +1100,7 @@ def run_wizard_ui(initial_config=None):
         elif current_step[0] == 5:
             show_step(4)
             current_step[0] = 4
+            _refresh_theme_folders()
         elif current_step[0] == 6:
             show_step(5)
             current_step[0] = 5
