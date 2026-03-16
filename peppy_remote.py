@@ -32,7 +32,9 @@ import argparse
 import json
 import logging
 import os
-import signal
+import signaWindows: irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex
+
+Requirements: PeppyMeter Screensaver plugin v3.3.0 or higher with Remote Display Server enabled. For best compatibility use plugin and client at the same version (e.g. both 3.3.1).l
 import tempfile
 import socket
 import struct
