@@ -1194,7 +1194,7 @@ class ServerDiscovery:
             try:
                 data, addr = sock.recvfrom(1024)
                 try:
-                    info = json.loads(data.decode('utf-8'))
+                    info = json.loads(data.decode('utf-8', errors='replace'))
                     if info.get('service') == 'peppy_level_server':
                         ip = addr[0]
                         if ip not in self.servers:
@@ -1272,7 +1272,7 @@ class ConfigVersionListener(threading.Thread):
                 if self.server_ip is not None and addr[0] != self.server_ip:
                     continue
                 try:
-                    info = json.loads(data.decode('utf-8'))
+                    info = json.loads(data.decode('utf-8', errors='replace'))
                     if info.get('service') != 'peppy_level_server':
                         continue
                     
@@ -1352,7 +1352,7 @@ class ConfigFetcher:
         try:
             req = urllib.request.Request(url, headers={'Accept': 'application/json'})
             with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode())
+                data = json.loads(response.read().decode('utf-8', errors='replace'))
                 
                 # Volumio REST API wraps plugin response in 'data' field
                 # Response format: {"success": true, "data": {"success": true, "version": "...", "config": "..."}}
@@ -1682,7 +1682,7 @@ def _fetch_font(filename, fonts_dir, server_ip, volumio_port):
             headers={'Content-Type': 'application/json', 'User-Agent': 'PeppyRemote/1.0'},
         )
         with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode())
+            data = json.loads(response.read().decode('utf-8', errors='replace'))
             if not data.get('success'):
                 print(f"  Required font missing: {filename}")
                 return False
@@ -1810,7 +1810,8 @@ class SMBMount:
             result = subprocess.run(
                 ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
                  '-o', opts_guest],
-                capture_output=True, text=True
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace'
             )
             if result.returncode == 0:
                 print(f"  Mounted as guest (SMB {vers})")
@@ -1819,7 +1820,8 @@ class SMBMount:
             result = subprocess.run(
                 ['sudo', 'mount', '-t', 'cifs', self.share_path, str(self.mount_point),
                  '-o', opts_creds],
-                capture_output=True, text=True
+                capture_output=True, text=True,
+                encoding='utf-8', errors='replace'
             )
             if result.returncode == 0:
                 print(f"  Mounted with volumio credentials (SMB {vers})")
