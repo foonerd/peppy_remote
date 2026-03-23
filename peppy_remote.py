@@ -3168,9 +3168,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 return False
             if _reload_check_done[0]:
                 return _reload_should_exit[0]
+            # Authoritative on-screen state is pm.util; do not prefer current_version_holder (it can
+            # race ahead of the display after UDP and falsely match parse_server_meter_state).
             active_meter_override = version_listener.new_active_meter or current_version_holder.get('active_meter', '')
             current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
-            current_meter = current_version_holder.get('active_meter') or (pm.util.meter_config.get(METER, '') or '')
+            current_meter = (pm.util.meter_config.get(METER, '') or '') or current_version_holder.get('active_meter', '')
             success, config_content, _ = config_fetcher.fetch()
             if not success or not config_content:
                 _reload_check_done[0] = True
@@ -3196,10 +3198,10 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         try:
             while True:
                 current_version_holder['version'] = config_fetcher.cached_version or ''
-                # Track active meter from listener (if known)
-                if version_listener.new_active_meter:
-                    current_version_holder['active_meter'] = version_listener.new_active_meter
-                version_listener.reload_requested = False
+                # Do not copy listener active_meter into current_version_holder here — that made
+                # reload checks think we already matched the server while the display still showed
+                # the previous meter. Do not clear reload_requested; the callback clears it when
+                # appropriate after comparing on-screen state to the server.
                 # Save new_active_meter BEFORE clearing for use after display loop exits
                 pending_active_meter = version_listener.new_active_meter
                 version_listener.new_active_meter = None
@@ -3225,7 +3227,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 
                 # Fallback: if we exited without callback (old volumio_peppymeter), check here
                 current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
-                current_meter = current_version_holder.get('active_meter') or (pm.util.meter_config.get(METER, '') or '')
+                current_meter = (pm.util.meter_config.get(METER, '') or '') or current_version_holder.get('active_meter', '')
                 success, config_content, _ = config_fetcher.fetch()
                 if success and config_content:
                     new_meter_folder, new_chosen_meter = parse_server_meter_state(
