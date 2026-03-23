@@ -26,7 +26,7 @@ Usage:
     peppy_remote --test             # Simple test display
 """
 
-__version__ = "3.3.1"  # Footlocked to PeppyMeter Screensaver release
+__version__ = "3.3.2"  # Footlocked to PeppyMeter Screensaver release
 
 import argparse
 import json
