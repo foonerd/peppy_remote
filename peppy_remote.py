@@ -1256,15 +1256,38 @@ class ConfigVersionListener(threading.Thread):
         self.first_announcement_received = False  # True after first valid UDP packet (for sync screen)
         self._stop = False
         self._sock = None
+        self.bound_port = None  # Actual local UDP port (may differ if multiple clients on one host)
+        self._bound_event = threading.Event()
+
+    def wait_until_bound(self, timeout=5.0):
+        """Wait for bind attempt to finish (success or failure). Returns True if bound to a port."""
+        self._bound_event.wait(timeout)
+        return self.bound_port is not None
 
     def run(self):
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.settimeout(1.0)
+        self._bound_event.clear()
         try:
-            self._sock.bind(('', self.port))
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, 'SO_REUSEPORT'):
+                try:
+                    self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError:
+                    pass
+            self._sock.settimeout(1.0)
+            try:
+                self._sock.bind(('', self.port))
+            except OSError:
+                self._sock.bind(('', 0))
+            self.bound_port = self._sock.getsockname()[1]
+            if self.bound_port != self.port:
+                log_client(f"Discovery listener using UDP port {self.bound_port} (default {self.port} in use)", "verbose", "network")
         except OSError as e:
             print(f"  ConfigVersionListener: could not bind to port {self.port}: {e}")
+            self.bound_port = None
+        finally:
+            self._bound_event.set()
+        if self.bound_port is None:
             return
         while not self._stop:
             try:
@@ -1903,13 +1926,19 @@ class LevelReceiver:
     CLIENT_VERSION = 2  # Protocol version
     HEARTBEAT_INTERVAL = 30  # seconds between heartbeats
     
-    def __init__(self, server_ip, port=5580, client_id=None, subscriptions=None):
+    def __init__(self, server_ip, port=5580, client_id=None, subscriptions=None,
+                 discovery_listen_port=None, spectrum_listen_port=None, spectrum_default_port=5581):
         self.server_ip = server_ip
         self.port = port
         self.sock = None
         self._running = False
         self._thread = None
         self._heartbeat_thread = None
+        # Optional ports for registration when multiple clients share one host (ephemeral UDP binds)
+        self.discovery_listen_port = discovery_listen_port
+        self.spectrum_listen_port = spectrum_listen_port
+        self.spectrum_default_port = spectrum_default_port
+        self.actual_listen_port = None
         
         # Generate unique client_id if not provided
         if client_id:
@@ -1936,12 +1965,17 @@ class LevelReceiver:
         if not self.sock or not self.server_ip:
             return
         try:
-            msg = json.dumps({
+            body = {
                 'type': 'register',
                 'client_id': self.client_id,
                 'version': self.CLIENT_VERSION,
-                'subscribe': self.subscriptions
-            }).encode('utf-8')
+                'subscribe': self.subscriptions,
+            }
+            if self.discovery_listen_port is not None and self.discovery_listen_port != DISCOVERY_PORT:
+                body['discovery_port'] = self.discovery_listen_port
+            if self.spectrum_listen_port is not None and self.spectrum_listen_port != self.spectrum_default_port:
+                body['spectrum_listen_port'] = self.spectrum_listen_port
+            msg = json.dumps(body).encode('utf-8')
             self.sock.sendto(msg, (self.server_ip, self.port))
             print(f"  Registered with server as '{self.client_id}' (v{self.CLIENT_VERSION})")
         except Exception as e:
@@ -1982,24 +2016,37 @@ class LevelReceiver:
     
     def start(self):
         """Start receiving level data in background thread."""
+        if self._running:
+            return
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, 'SO_REUSEPORT'):
+            try:
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
         self.sock.settimeout(1.0)
-        self.sock.bind(('', self.port))
-        
+        try:
+            self.sock.bind(('', self.port))
+        except OSError:
+            self.sock.bind(('', 0))
+        self.actual_listen_port = self.sock.getsockname()[1]
+        if self.actual_listen_port != self.port:
+            log_client(f"Level receiver using UDP port {self.actual_listen_port} (default {self.port} in use)", "verbose", "network")
+
         self._running = True
-        
+
         # Send registration to server
         self._send_registration()
-        
+
         # Start heartbeat thread
         self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self._heartbeat_thread.start()
-        
+
         # Start receive thread
         self._thread = threading.Thread(target=self._receive_loop, daemon=True)
         self._thread.start()
-        print(f"Level receiver started on UDP port {self.port}")
+        print(f"Level receiver started on UDP port {self.actual_listen_port}")
     
     def _receive_loop(self):
         """Background thread to receive level data."""
@@ -2055,6 +2102,7 @@ class SpectrumReceiver:
         self.server_ip = server_ip
         self.port = port
         self.sock = None
+        self.bound_port = None
         self._running = False
         self._thread = None
         
@@ -2064,18 +2112,39 @@ class SpectrumReceiver:
         self.bins = []  # List of frequency bin values
         self.last_update = 0
         self._first_packet_logged = False
+
+    def bind_socket(self):
+        """Bind local UDP socket (call before LevelReceiver registration when ports must be coordinated)."""
+        if self.sock is not None:
+            return self.bound_port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, 'SO_REUSEPORT'):
+            try:
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
+        self.sock.settimeout(1.0)
+        try:
+            self.sock.bind(('', self.port))
+        except OSError:
+            self.sock.bind(('', 0))
+        self.bound_port = self.sock.getsockname()[1]
+        if self.bound_port != self.port:
+            log_client(f"Spectrum receiver using UDP port {self.bound_port} (default {self.port} in use)", "verbose", "network")
+        return self.bound_port
     
     def start(self):
         """Start receiving spectrum data in background thread."""
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.settimeout(1.0)
-        self.sock.bind(('', self.port))
-        
+        if self._running:
+            return
+        if self.sock is None:
+            self.bind_socket()
+
         self._running = True
         self._thread = threading.Thread(target=self._receive_loop, daemon=True)
         self._thread.start()
-        print(f"Spectrum receiver started on UDP port {self.port}")
+        print(f"Spectrum receiver started on UDP port {self.bound_port}")
     
     def _receive_loop(self):
         """Background thread to receive spectrum data."""
@@ -2125,7 +2194,12 @@ class SpectrumReceiver:
         """Stop receiving."""
         self._running = False
         if self.sock:
-            self.sock.close()
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+            self.sock = None
+        self.bound_port = None
         if self._thread:
             self._thread.join(timeout=2.0)
     
@@ -2920,6 +2994,32 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
         log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
         log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
+
+        # UDP listeners and registration before RemoteDataSource (supports multiple clients on one host)
+        current_version_holder = {
+            'version': config_fetcher.cached_version or '',
+            'active_meter': initial_chosen_meter or '',
+            'active_meter_folder': initial_meter_folder or ''
+        }
+        _disc_port = server_info.get('discovery_port', DISCOVERY_PORT)
+        version_listener = ConfigVersionListener(
+            _disc_port, current_version_holder, server_ip=server_info['ip']
+        )
+        version_listener.start()
+        version_listener.wait_until_bound(5.0)
+        sp_default = int(server_info.get('spectrum_port', 5581))
+        level_receiver.spectrum_default_port = sp_default
+        if spectrum_receiver:
+            try:
+                spectrum_receiver.bind_socket()
+            except Exception as e:
+                log_client(f"SpectrumReceiver bind_socket: {e}", "verbose", "network")
+            level_receiver.spectrum_listen_port = spectrum_receiver.bound_port
+        level_receiver.discovery_listen_port = version_listener.bound_port
+        if not getattr(level_receiver, '_running', False):
+            level_receiver.start()
+        if spectrum_receiver and not getattr(spectrum_receiver, '_running', False):
+            spectrum_receiver.start()
         
         # Replace data source with remote data source
         print("Connecting remote data source...")
@@ -2983,18 +3083,6 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         pg.display.init()
         pg.mouse.set_visible(False)
         pg.font.init()
-        
-        # Config version listener: detect server config/template changes and reload
-        current_version_holder = {
-            'version': config_fetcher.cached_version or '',
-            'active_meter': initial_chosen_meter or '',
-            'active_meter_folder': initial_meter_folder or ''
-        }
-        discovery_port = server_info.get('discovery_port', DISCOVERY_PORT)
-        version_listener = ConfigVersionListener(
-            discovery_port, current_version_holder, server_ip=server_info['ip']
-        )
-        version_listener.start()
         
         peppy_running_file = os.path.join(tempfile.gettempdir(), 'peppyrunning')
         from pathlib import Path
@@ -3703,18 +3791,15 @@ def main():
     if server_info.get('config_version'):
         print(f"Server config version: {server_info['config_version']}")
     
-    # Start level receiver with registration for both data streams
+    spectrum_port = int(server_info.get('spectrum_port', config['server'].get('spectrum_port', 5581)))
+    # Receivers start inside run_peppymeter_display after discovery UDP bind (multiple clients / one host)
     level_receiver = LevelReceiver(
-        server_info['ip'], 
+        server_info['ip'],
         server_info['level_port'],
-        subscriptions=['meters', 'spectrum']  # Register interest in both streams
+        subscriptions=['meters', 'spectrum'],
+        spectrum_default_port=spectrum_port,
     )
-    level_receiver.start()
-    
-    # Start spectrum receiver (no registration needed, handled by level_receiver)
-    spectrum_port = server_info.get('spectrum_port', config['server'].get('spectrum_port', 5581))
     spectrum_receiver = SpectrumReceiver(server_info['ip'], spectrum_port)
-    spectrum_receiver.start()
     
     # Handle graceful shutdown
     def signal_handler(sig, frame):
@@ -3745,7 +3830,9 @@ def main():
     
     # Run display
     if args.test:
-        # Simple test display
+        # Simple test display (no discovery listener; bind default ports only)
+        level_receiver.start()
+        spectrum_receiver.start()
         run_test_display(level_receiver)
     else:
         # Full PeppyMeter rendering
