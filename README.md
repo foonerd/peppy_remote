@@ -8,6 +8,13 @@ This client uses the **same rendering code** as the Volumio plugin (turntable, c
 
 **Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.3.2). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
 
+### Version compatibility and startup
+
+- **Authoritative check:** The client compares its release with the **PeppyMeter Screensaver** version returned by Volumio over **HTTP** (`getRemoteConfig`). UDP discovery may include a `plugin_version` field from broadcasts on your LAN, but it is **not** used for compatibility decisions—only a successful HTTP response from the server you selected counts.
+- **Wait for Volumio:** After you pick a server (discovery or `--server`), the client retries HTTP every few seconds for up to **120 seconds** by default (see `--server-wait-timeout`). While waiting, a pygame window may show “Waiting for server” (or console messages if pygame is unavailable).
+- **Semver match:** If the server plugin is too old, does not advertise a version, or the release does not match the client, a **blocking** message explains the problem; the client then exits. Use **`--skip-version-check`** only if you understand the risk (e.g. temporary testing).
+- **Server logs:** When the remote sends control messages with **`client_version`**, the plugin can log comparisons at **Verbose** debug (see PeppyMeter Screensaver debug settings).
+
 ## Quick Install
 
 One-liner installation:
@@ -260,6 +267,8 @@ Settings are stored in `~/peppy_remote/config.json`:
 | debug | trace_network | false | Log network connection details |
 | debug | trace_config | false | Log config fetch and theme/sync decisions |
 
+**CLI-only (not in `config.json`):** `--skip-version-check`, `--server-wait-timeout <seconds>` (default 120; minimum effective wait 5 s). Used during the HTTP version check phase before the meter starts.
+
 Command-line arguments override config file settings:
 
 ```bash
@@ -281,6 +290,10 @@ Command-line arguments override config file settings:
 
 # Spectrum tuning
 ~/peppy_remote/peppy_remote --decay-rate 0.97
+
+# Version / HTTP wait (defaults: wait up to 120s for Volumio HTTP before failing)
+~/peppy_remote/peppy_remote --server-wait-timeout 180
+~/peppy_remote/peppy_remote --skip-version-check   # not recommended for normal use
 ```
 
 ## Requirements
@@ -304,19 +317,20 @@ Command-line arguments override config file settings:
 ## How It Works
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
-   - Discovery packets include `config_version` (for config change detection) and `active_meter` (protocol v3: server’s current theme for random-meter sync).
-2. **Startup / syncing**: Before the meter starts, the client shows a “Waiting for data from server” / “Please wait a moment.” screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server’s current theme (including when the server uses random meter) before drawing.
-3. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
+   - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server’s current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility—see [Version compatibility and startup](#version-compatibility-and-startup)).
+2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin’s advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s).
+3. **Startup / syncing**: After the version check passes, the client shows a “Waiting for data from server” / “Please wait a moment.” screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server’s current theme (including when the server uses random meter) before drawing.
+4. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
    - Uses direct IP address from discovery for reliable connectivity
    - Endpoint: `/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig`
    - Persist countdown settings (duration, freeze vs countdown) are taken from the server and used when playback stops.
-4. **Templates**: Mounts template skins from server via SMB (or uses local/UNC paths if configured).
-5. **Audio Levels**: Receives real-time level data via UDP (port 5580).
-6. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations.
-7. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art URLs, playback state.
-8. **Album art and vinyl**: Album art is fetched via HTTP from Volumio (or from local paths when using SMB templates). Vinyl images use the server's `getVinylImage` endpoint when configured.
-9. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
-10. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
+5. **Templates**: Mounts template skins from server via SMB (or uses local/UNC paths if configured).
+6. **Audio Levels**: Receives real-time level data via UDP (port 5580).
+7. **Spectrum Data**: Receives FFT frequency bins via UDP (port 5581) for spectrum visualizations.
+8. **Metadata**: Connects to Volumio socket.io (port 3000) for track info, album art URLs, playback state.
+9. **Album art and vinyl**: Album art is fetched via HTTP from Volumio (or from local paths when using SMB templates). Vinyl images use the server's `getVinylImage` endpoint when configured.
+10. **Rendering**: Uses full Volumio PeppyMeter code (turntable, cassette, meters, spectrum, indicators).
+11. **Config/theme reload**: When the server sends a config or theme change (e.g. new `config_version` or `active_meter`), the client reloads only if the **theme folder** or **theme name** would actually change. If the current display already matches (same folder and same theme), the client continues without restarting the meter. If you set **meter theme** (kiosk) in config (`display.meter_folder` and `display.meter`), this client always uses that fixed theme and ignores server theme changes; reload checks use the override so the meter does not restart for server theme updates.
 
 For server random-meter sync, discovery `active_meter` is treated as the runtime authority. The fetched `config.txt` may still contain `meter=random`; that value is config intent, not the immediate runtime meter. This prevents random-meter flip-flop loops during reload decisions.
 
@@ -428,6 +442,12 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Ensure Volumio plugin is installed and running
 - Test endpoint manually: `curl "http://<server_ip>:3000/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig"`
 - Check Volumio logs for plugin errors
+
+**Version mismatch / “server plugin is too old” / client exits after wait:**
+- Match **peppy_remote** to the **PeppyMeter Screensaver** release on Volumio (same semver, e.g. 3.3.2 with 3.3.2).
+- Ensure Volumio is up and the plugin is enabled so HTTP `getRemoteConfig` succeeds; increase **`--server-wait-timeout`** if the device is slow to boot.
+- For emergency testing only: **`--skip-version-check`** (expect undefined behavior if versions differ).
+- On the server, **Verbose** debug can log remote **`client_version`** vs server release when control messages arrive.
 
 **No audio levels:**
 - Check server is broadcasting: `nc -ul 5580`
