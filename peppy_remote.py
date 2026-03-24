@@ -55,6 +55,274 @@ SMB_MOUNT_BASE = os.path.join(SCRIPT_DIR, "mnt")  # Local mount point (portable)
 SMB_SHARE_PATH = "Internal Storage/peppy_screensaver"
 LOG_FILE = os.path.join(SCRIPT_DIR, "peppy_remote.log")
 
+
+def _parse_semver_tuple(s):
+    """Parse major.minor.patch style string to a 3-tuple. Returns None if invalid."""
+    if not s or not isinstance(s, str):
+        return None
+    s = s.strip()
+    parts = s.split('.')
+    if len(parts) < 2:
+        return None
+    nums = []
+    for p in parts[:3]:
+        n = ''
+        for c in p:
+            if c.isdigit():
+                n += c
+            else:
+                break
+        if not n:
+            return None
+        nums.append(int(n))
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums[:3])
+
+
+def _compare_remote_release_versions(client_ver, server_ver):
+    """Returns -1 if client < server, 0 if equal, +1 if client > server, None if unparsable."""
+    tc = _parse_semver_tuple(client_ver)
+    ts = _parse_semver_tuple(server_ver)
+    if tc is None or ts is None:
+        return None
+    if tc < ts:
+        return -1
+    if tc > ts:
+        return 1
+    return 0
+
+
+# Seconds to retry HTTP to Volumio before treating server as offline (version check phase only)
+SERVER_WAIT_TIMEOUT_SEC = 120.0
+SERVER_RETRY_INTERVAL_SEC = 2.0
+
+
+def wait_for_server_plugin_version(server_info, config_fetcher, timeout_sec=SERVER_WAIT_TIMEOUT_SEC):
+    """
+    Wait until this host's Volumio answers HTTP getRemoteConfig, or timeout.
+
+    UDP discovery may advertise plugin_version from *any* peer on the LAN; we do not trust it
+    for compatibility — only a successful HTTP response from server_info['ip'] counts.
+
+    Returns (status, plugin_version_or_none):
+      status: 'ok' | 'missing' | 'timeout'
+    """
+    ip = server_info.get('ip', '')
+    label = server_info.get('hostname') or ip or 'server'
+    deadline = time.time() + float(timeout_sec)
+    next_fetch = 0.0
+    attempt = 0
+    use_pygame = False
+    screen = None
+    clock = None
+    font_title = font_body = font_hint = None
+    pygame_mod = None
+    try:
+        import pygame as _pg
+        pygame_mod = _pg
+        _pg.init()
+        screen = _pg.display.set_mode((800, 480), _pg.RESIZABLE)
+        _pg.display.set_caption('PeppyMeter Remote — Waiting for server')
+        clock = _pg.time.Clock()
+        try:
+            font_title = _pg.font.Font(None, 26)
+            font_body = _pg.font.Font(None, 20)
+            font_hint = _pg.font.Font(None, 18)
+        except Exception:
+            font_title = _pg.font.SysFont('arial', 22)
+            font_body = _pg.font.SysFont('arial', 17)
+            font_hint = _pg.font.SysFont('arial', 15)
+        use_pygame = True
+    except Exception:
+        pass
+
+    print(f"Waiting for Volumio / PeppyMeter at {label} ({ip})... (up to {int(timeout_sec)}s)")
+    log_client(f"Waiting for server HTTP (plugin version), timeout={timeout_sec}s", "basic")
+
+    try:
+        while time.time() < deadline:
+            now = time.time()
+            if now >= next_fetch:
+                attempt += 1
+                next_fetch = now + SERVER_RETRY_INTERVAL_SEC
+                ok, _, _ = config_fetcher.fetch()
+                if ok:
+                    pv = (getattr(config_fetcher, 'cached_plugin_version', None) or '').strip()
+                    if pv:
+                        print(f"  Server reachable (plugin {pv}).")
+                        return 'ok', pv
+                    print('  Server responded but does not advertise plugin_version (old plugin).')
+                    return 'missing', None
+                log_client(f"Server HTTP not ready yet (attempt {attempt})", "verbose", "network")
+                if not use_pygame:
+                    left = max(0, int(deadline - now))
+                    print(f"  Still waiting... ({left}s left)")
+
+            if use_pygame and screen is not None and pygame_mod is not None:
+                for event in pygame_mod.event.get():
+                    if event.type == pygame_mod.QUIT:
+                        print('Waiting cancelled by user.')
+                        return 'timeout', None
+                screen.fill((20, 20, 28))
+                y = 36
+                rows = (
+                    ('Waiting for server', font_title, (180, 200, 255)),
+                    (f'{label} ({ip})', font_body, (220, 220, 230)),
+                    ('', font_body, (220, 220, 230)),
+                    ('Starting Volumio or the PeppyMeter plugin can take a minute.', font_body, (200, 200, 210)),
+                    ('This window will close when the server answers.', font_body, (200, 200, 210)),
+                    (f'Attempt {attempt}  ·  {max(0, int(deadline - time.time()))}s left', font_hint, (140, 140, 155)),
+                )
+                for text, font, color in rows:
+                    if text:
+                        s = font.render(text, True, color)
+                        screen.blit(s, (40, y))
+                    y += 30 if font is font_title else 26
+                pygame_mod.display.flip()
+                clock.tick(30)
+            else:
+                time.sleep(0.15)
+
+        print('Timed out waiting for server HTTP.')
+        return 'timeout', None
+    finally:
+        if use_pygame and pygame_mod is not None:
+            try:
+                pygame_mod.quit()
+            except Exception:
+                pass
+
+
+def show_version_mismatch_screen(title, body_lines):
+    """
+    Blocking fullscreen message until user closes (click, Enter, Escape, or window close).
+    Works on Linux and Windows (pygame).
+    """
+    import pygame
+    pygame.init()
+    screen = pygame.display.set_mode((880, 520), pygame.RESIZABLE)
+    pygame.display.set_caption('PeppyMeter Remote — Version')
+    try:
+        font_title = pygame.font.Font(None, 28)
+        font_body = pygame.font.Font(None, 22)
+        font_hint = pygame.font.Font(None, 20)
+    except Exception:
+        font_title = pygame.font.SysFont('arial', 24)
+        font_body = pygame.font.SysFont('arial', 18)
+        font_hint = pygame.font.SysFont('arial', 16)
+    clock = pygame.time.Clock()
+    bg = (22, 22, 30)
+    fg = (230, 230, 235)
+    accent = (255, 120, 100)
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+                    running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                running = False
+        screen.fill(bg)
+        y = 40
+        t = font_title.render(title, True, accent)
+        screen.blit(t, (40, y))
+        y += 48
+        for line in body_lines:
+            if not line:
+                y += 12
+                continue
+            s = font_body.render(line, True, fg)
+            screen.blit(s, (40, y))
+            y += 28
+        hint = font_hint.render('Click or press Enter / Escape to close', True, (140, 140, 155))
+        screen.blit(hint, (40, 480))
+        pygame.display.flip()
+        clock.tick(30)
+    pygame.quit()
+
+
+def check_remote_version_and_exit_if_mismatch(
+    server_info, config_fetcher, skip_check=False, wait_timeout_sec=SERVER_WAIT_TIMEOUT_SEC
+):
+    """
+    Wait for Volumio HTTP if needed, then compare PeppyMeter Screensaver release with this client.
+    On mismatch or unreachable server after wait, show blocking UI and exit.
+    """
+    if skip_check:
+        return
+    status, server_pv = wait_for_server_plugin_version(server_info, config_fetcher, timeout_sec=wait_timeout_sec)
+    client_pv = __version__
+
+    if status == 'timeout':
+        show_version_mismatch_screen(
+            'Server not reachable',
+            [
+                'Could not connect to Volumio within the wait time.',
+                'Power on the device, wait until Volumio is ready, enable PeppyMeter Screensaver,',
+                'then run peppy_remote again (or increase --server-wait-timeout).',
+                '',
+                f'This client (peppy_remote): {client_pv}',
+            ],
+        )
+        sys.exit(1)
+
+    if status == 'missing' or not server_pv:
+        show_version_mismatch_screen(
+            'Server plugin is too old',
+            [
+                'This Volumio system does not advertise a PeppyMeter Screensaver version.',
+                'Update PeppyMeter Screensaver on the Volumio device to a release that supports',
+                'remote version checks, then try again.',
+                '',
+                f'This client (peppy_remote): {client_pv}',
+            ],
+        )
+        sys.exit(1)
+
+    cmp = _compare_remote_release_versions(client_pv, server_pv)
+    if cmp == 0:
+        return
+    if cmp is None:
+        show_version_mismatch_screen(
+            'Version check failed',
+            [
+                'Could not compare release versions.',
+                f'Client: {client_pv}  Server: {server_pv}',
+                'Update both sides to the latest PeppyMeter Screensaver / peppy_remote releases.',
+            ],
+        )
+        sys.exit(1)
+
+    if cmp < 0:
+        show_version_mismatch_screen(
+            'Update peppy_remote',
+            [
+                'This remote client is older than the PeppyMeter Screensaver plugin on the server.',
+                'Update peppy_remote on this machine to match the server, then try again.',
+                '',
+                f'Server (plugin): {server_pv}',
+                f'This client (peppy_remote): {client_pv}',
+            ],
+        )
+        sys.exit(1)
+
+    show_version_mismatch_screen(
+        'Update PeppyMeter Screensaver on Volumio',
+        [
+            'The PeppyMeter Screensaver plugin on the server is older than this remote client.',
+            'Update the plugin on the Volumio device (or install a matching peppy_remote release),',
+            'then try again.',
+            '',
+            f'Server (plugin): {server_pv}',
+            f'This client (peppy_remote): {client_pv}',
+        ],
+    )
+    sys.exit(1)
+
+
 # =============================================================================
 # Client Debug System
 # =============================================================================
@@ -1209,7 +1477,8 @@ class ServerDiscovery:
                                 'spectrum_port': info.get('spectrum_port', 5581),
                                 'volumio_port': info.get('volumio_port', 3000),
                                 'version': info.get('version', 1),
-                                'config_version': info.get('config_version', '')
+                                'config_version': info.get('config_version', ''),
+                                'plugin_version': (info.get('plugin_version') or '').strip(),
                             }
                         else:
                             # Update config_version if changed
@@ -1217,6 +1486,10 @@ class ServerDiscovery:
                             if new_version and new_version != self.servers[ip].get('config_version'):
                                 self.servers[ip]['config_version'] = new_version
                                 log_client(f"Discovery: config version updated to {new_version}", "verbose")
+                            pv = (info.get('plugin_version') or '').strip()
+                            if pv and pv != self.servers[ip].get('plugin_version'):
+                                self.servers[ip]['plugin_version'] = pv
+                                log_client(f"Discovery: plugin_version updated to {pv}", "verbose")
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     log_client(f"Discovery: invalid packet from {addr}", "trace", "network")
                     pass
@@ -1359,6 +1632,7 @@ class ConfigFetcher:
         self.volumio_port = volumio_port
         self.cached_config = None
         self.cached_version = None
+        self.cached_plugin_version = None  # PeppyMeter Screensaver release (package.json)
         # Persist countdown settings from server
         self.persist_duration = 0  # 0 = disabled
         self.persist_display = "freeze"
@@ -1384,6 +1658,7 @@ class ConfigFetcher:
                     if inner.get('success'):
                         self.cached_config = inner.get('config', '')
                         self.cached_version = inner.get('version', '')
+                        self.cached_plugin_version = inner.get('plugin_version')
                         # Extract persist settings from server
                         self.persist_duration = int(inner.get('persist_duration', 0) or 0)
                         self.persist_display = inner.get('persist_display', 'freeze') or 'freeze'
@@ -1969,6 +2244,7 @@ class LevelReceiver:
                 'type': 'register',
                 'client_id': self.client_id,
                 'version': self.CLIENT_VERSION,
+                'client_version': __version__,
                 'subscribe': self.subscriptions,
             }
             if self.discovery_listen_port is not None and self.discovery_listen_port != DISCOVERY_PORT:
@@ -3616,6 +3892,10 @@ def main():
                        help='Enable network connection trace logging')
     parser.add_argument('--version', '-V', action='store_true',
                        help='Show version and exit')
+    parser.add_argument('--skip-version-check', action='store_true',
+                       help='Skip remote vs server release check (diagnostics only)')
+    parser.add_argument('--server-wait-timeout', type=int, default=int(SERVER_WAIT_TIMEOUT_SEC),
+                       help='Seconds to wait for Volumio HTTP during version check (default %d)' % int(SERVER_WAIT_TIMEOUT_SEC))
     
     args = parser.parse_args()
     
@@ -3736,7 +4016,8 @@ def main():
             'hostname': server_host,
             'level_port': config["server"]["level_port"],
             'spectrum_port': config["server"]["spectrum_port"],
-            'volumio_port': config["server"]["volumio_port"]
+            'volumio_port': config["server"]["volumio_port"],
+            'plugin_version': '',
         }
         print(f"Using server: {server_host} ({ip})")
     else:
@@ -3792,7 +4073,13 @@ def main():
         print(f"Server config version: {server_info['config_version']}")
     
     spectrum_port = int(server_info.get('spectrum_port', config['server'].get('spectrum_port', 5581)))
-    # Receivers start inside run_peppymeter_display after discovery UDP bind (multiple clients / one host)
+    # Remote vs PeppyMeter Screensaver release (blocking UI if mismatch)
+    if not args.test:
+        check_remote_version_and_exit_if_mismatch(
+            server_info, config_fetcher, skip_check=args.skip_version_check,
+            wait_timeout_sec=max(5, int(args.server_wait_timeout)),
+        )
+    # Receivers: discovery UDP bind may run inside run_peppymeter_display (multiple clients / one host)
     level_receiver = LevelReceiver(
         server_info['ip'],
         server_info['level_port'],
