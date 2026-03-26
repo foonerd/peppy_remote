@@ -145,6 +145,11 @@ def _resolve_pygame_ui_font(pg, size):
     return pg.font.Font(None, size)
 
 
+def _norm_str(s):
+    """Normalize config/meter strings for comparisons (UDP vs HTTP vs on-disk)."""
+    return (s or '').strip()
+
+
 # Seconds to retry HTTP to Volumio before treating server as offline (version check phase only)
 SERVER_WAIT_TIMEOUT_SEC = 120.0
 SERVER_RETRY_INTERVAL_SEC = 2.0
@@ -1627,22 +1632,22 @@ class ConfigVersionListener(threading.Thread):
                     # Mark that we've received at least one announcement (for "waiting for server" screen)
                     self.first_announcement_received = True
                     if info.get('active_meter'):
-                        self.new_active_meter = info.get('active_meter')
+                        self.new_active_meter = _norm_str(info.get('active_meter'))
                     
                     # Check config_version change (file-based config changes)
                     new_version = info.get('config_version', '')
                     if new_version:
                         current = self.current_version_holder.get('version', '')
-                        if new_version != current:
+                        if _norm_str(new_version) != _norm_str(current):
                             self.reload_requested = True
                     
                     # Check active_meter change (random meter sync, protocol v3+)
                     new_meter = info.get('active_meter', '')
                     if new_meter:
                         current_meter = self.current_version_holder.get('active_meter', '')
-                        if new_meter != current_meter:
+                        if _norm_str(new_meter) != _norm_str(current_meter):
                             # Active meter changed - trigger reload with new meter name
-                            self.new_active_meter = new_meter
+                            self.new_active_meter = _norm_str(new_meter)
                             self.reload_requested = True
                             
                 except (json.JSONDecodeError, UnicodeDecodeError):
@@ -3325,9 +3330,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
 
         # UDP listeners and registration before RemoteDataSource (supports multiple clients on one host)
         current_version_holder = {
-            'version': config_fetcher.cached_version or '',
-            'active_meter': initial_chosen_meter or '',
-            'active_meter_folder': initial_meter_folder or ''
+            'version': _norm_str(config_fetcher.cached_version),
+            'active_meter': _norm_str(initial_chosen_meter),
+            'active_meter_folder': _norm_str(initial_meter_folder)
         }
         _disc_port = server_info.get('discovery_port', DISCOVERY_PORT)
         version_listener = ConfigVersionListener(
@@ -3473,8 +3478,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
                 peppymeter_path, templates_path, config_fetcher, active_meter_override, client_config=client_config
             )
-            current_version_holder['active_meter'] = new_chosen_meter or ''
-            current_version_holder['active_meter_folder'] = new_meter_folder or ''
+            current_version_holder['active_meter'] = _norm_str(new_chosen_meter)
+            current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
+            current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
             pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
                            quit_pygame_on_stop=False)
             parser = Volumio_ConfigFileParser(pm.util)
@@ -3597,12 +3603,13 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             new_meter_folder, new_chosen_meter = parse_server_meter_state(
                 config_content, templates_path, active_meter_override, client_theme_override=client_override
             )
-            if new_meter_folder == current_folder and new_chosen_meter == current_meter:
+            if (_norm_str(new_meter_folder) == _norm_str(current_folder) and
+                    _norm_str(new_chosen_meter) == _norm_str(current_meter)):
                 version_listener.reload_requested = False
                 version_listener.new_active_meter = None
-                current_version_holder['version'] = config_fetcher.cached_version or ''
-                current_version_holder['active_meter'] = new_chosen_meter or current_meter
-                current_version_holder['active_meter_folder'] = new_meter_folder or current_folder
+                current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
+                current_version_holder['active_meter'] = _norm_str(new_chosen_meter) or _norm_str(current_meter)
+                current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder) or _norm_str(current_folder)
                 _reload_check_done[0] = True
                 _reload_should_exit[0] = False
                 print("Config/folder+theme unchanged, continuing.")
@@ -3613,7 +3620,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
 
         try:
             while True:
-                current_version_holder['version'] = config_fetcher.cached_version or ''
+                current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
                 # Do not copy listener active_meter into current_version_holder here — that made
                 # reload checks think we already matched the server while the display still showed
                 # the previous meter. Do not clear reload_requested; the callback clears it when
@@ -3644,32 +3651,50 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 # Fallback: if we exited without callback (old volumio_peppymeter), check here
                 current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
                 current_meter = (pm.util.meter_config.get(METER, '') or '') or current_version_holder.get('active_meter', '')
+                prev_ver = _norm_str(current_version_holder.get('version'))
                 success, config_content, _ = config_fetcher.fetch()
+                new_ver = _norm_str(config_fetcher.cached_version or '')
                 if success and config_content:
                     new_meter_folder, new_chosen_meter = parse_server_meter_state(
                         config_content, templates_path, active_meter_override, client_theme_override=client_override
                     )
-                    if (new_meter_folder == current_folder and new_chosen_meter == current_meter):
-                        current_version_holder['version'] = config_fetcher.cached_version or ''
-                        current_version_holder['active_meter'] = new_chosen_meter or current_meter
-                        current_version_holder['active_meter_folder'] = new_meter_folder or current_folder
+                    if (_norm_str(new_meter_folder) == _norm_str(current_folder) and
+                            _norm_str(new_chosen_meter) == _norm_str(current_meter)):
+                        current_version_holder['version'] = new_ver
+                        current_version_holder['active_meter'] = _norm_str(new_chosen_meter) or _norm_str(current_meter)
+                        current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder) or _norm_str(current_folder)
                         version_listener.reload_requested = False
                         version_listener.new_active_meter = None
                         print("Config/folder+theme unchanged, continuing.")
                         continue
-                
-                if active_meter_override:
-                    print(f"Server active meter changed to: {active_meter_override}")
+
+                if not success or not config_content:
+                    print("Reloading: could not verify server config (HTTP); retrying full setup.")
                 else:
-                    print("Config changed on server, reloading...")
+                    parts = []
+                    if prev_ver != new_ver:
+                        parts.append(f"config version {prev_ver!r} -> {new_ver!r}")
+                    nf = _norm_str(new_meter_folder)
+                    cf = _norm_str(current_folder)
+                    nm = _norm_str(new_chosen_meter)
+                    cm = _norm_str(current_meter)
+                    if nf != cf:
+                        parts.append(f"meter folder {cf!r} -> {nf!r}")
+                    if nm != cm:
+                        parts.append(f"meter {cm!r} -> {nm!r}")
+                    if parts:
+                        print("Reloading: " + "; ".join(parts))
+                    else:
+                        print("Reloading: re-syncing with server (display/state mismatch).")
                 
                 # Restore CWD before reload - spectrum may have changed it to its template directory
                 os.chdir(peppymeter_path)
                 config_path, new_chosen_meter, new_meter_folder = setup_remote_config(
                     peppymeter_path, templates_path, config_fetcher, active_meter_override, client_config=client_config
                 )
-                current_version_holder['active_meter'] = new_chosen_meter or ''
-                current_version_holder['active_meter_folder'] = new_meter_folder or ''
+                current_version_holder['active_meter'] = _norm_str(new_chosen_meter)
+                current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
+                current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
                 pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
                                quit_pygame_on_stop=False)
                 parser = Volumio_ConfigFileParser(pm.util)
