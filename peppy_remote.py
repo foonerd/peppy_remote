@@ -93,6 +93,58 @@ def _compare_remote_release_versions(client_ver, server_ver):
     return 0
 
 
+def _resolve_pygame_ui_font(pg, size):
+    """Return a pygame Font for UI text on Linux, Windows, and macOS.
+
+    Tries common system families (including Linux ``sans``), validates with a test
+    render to avoid SDL ``NULL pointer`` failures, then ``SysFont(None)``, then
+    ``Font(None)`` as last resort.
+    """
+    try:
+        size = int(size)
+    except (TypeError, ValueError):
+        size = 20
+    if size < 1:
+        size = 1
+
+    names = (
+        'sans',
+        'DejaVu Sans',
+        'Liberation Sans',
+        'Segoe UI',
+        'Arial',
+        'Calibri',
+        'Microsoft Sans Serif',
+        'Helvetica Neue',
+    )
+
+    def _font_renders(f):
+        if f is None:
+            return False
+        try:
+            f.render(' ', True, (255, 255, 255))
+            return True
+        except Exception:
+            return False
+
+    for name in names:
+        try:
+            f = pg.font.SysFont(name, size)
+        except Exception:
+            continue
+        if _font_renders(f):
+            return f
+
+    try:
+        f = pg.font.SysFont(None, size)
+        if _font_renders(f):
+            return f
+    except Exception:
+        pass
+
+    return pg.font.Font(None, size)
+
+
 # Seconds to retry HTTP to Volumio before treating server as offline (version check phase only)
 SERVER_WAIT_TIMEOUT_SEC = 120.0
 SERVER_RETRY_INTERVAL_SEC = 2.0
@@ -130,9 +182,9 @@ def wait_for_server_plugin_version(server_info, config_fetcher, timeout_sec=SERV
             font_body = _pg.font.Font(None, 20)
             font_hint = _pg.font.Font(None, 18)
         except Exception:
-            font_title = _pg.font.SysFont('arial', 22)
-            font_body = _pg.font.SysFont('arial', 17)
-            font_hint = _pg.font.SysFont('arial', 15)
+            font_title = _resolve_pygame_ui_font(_pg, 22)
+            font_body = _resolve_pygame_ui_font(_pg, 17)
+            font_hint = _resolve_pygame_ui_font(_pg, 15)
         use_pygame = True
     except Exception:
         pass
@@ -208,9 +260,9 @@ def show_version_mismatch_screen(title, body_lines):
         font_body = pygame.font.Font(None, 22)
         font_hint = pygame.font.Font(None, 20)
     except Exception:
-        font_title = pygame.font.SysFont('arial', 24)
-        font_body = pygame.font.SysFont('arial', 18)
-        font_hint = pygame.font.SysFont('arial', 16)
+        font_title = _resolve_pygame_ui_font(pygame, 24)
+        font_body = _resolve_pygame_ui_font(pygame, 18)
+        font_hint = _resolve_pygame_ui_font(pygame, 16)
     clock = pygame.time.Clock()
     bg = (22, 22, 30)
     fg = (230, 230, 235)
@@ -3391,7 +3443,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         # Show "Waiting for server" modal until first UDP announcement (or timeout)
         SYNC_TIMEOUT = 10.0  # seconds
         sync_start = time.time()
-        font_sync = pg.font.SysFont('sans', min(28, max(18, screen_h // 25)))
+        font_sync = _resolve_pygame_ui_font(pg, min(28, max(18, screen_h // 25)))
         line1 = font_sync.render("Waiting for data from server", True, (240, 240, 240))
         line2 = font_sync.render("Please wait a moment.", True, (200, 200, 200))
         modal_w = min(500, int(screen_w * 0.6))
