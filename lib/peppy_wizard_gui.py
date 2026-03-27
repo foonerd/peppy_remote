@@ -241,17 +241,29 @@ def run_wizard_ui(initial_config=None):
     mount_status_var = tk.StringVar(value="Not mounted")
     lbl_mount_status = ttk.Label(smb_mount_row, textvariable=mount_status_var, font=('', 9), foreground='#555')
     def _wizard_server_host():
-        """Return current server host from wizard state, or None if not set."""
+        """Return current server host from wizard state, or None if not set.
+
+        Tries tkinter widget state first (live Step 1), then falls back to
+        config['server']['host'] which is set by apply_server() when the
+        user leaves Step 1.  The listbox selection is lost when the frame
+        is hidden by pack_forget(), so the fallback is needed for Steps 2+.
+        """
         mode = server_mode_var.get()
         if mode == "hostname":
-            return (hostname_var.get() or "").strip() or None
-        if mode == "ip":
-            return (ip_var.get() or "").strip() or None
-        sel = lb.curselection()
-        if sel and discovered and 0 <= sel[0] < len(discovered):
-            s = discovered[sel[0]]
-            return s.get("hostname", s["ip"]) if use_hostname_var.get() else s["ip"]
-        return None
+            h = (hostname_var.get() or "").strip()
+            if h:
+                return h
+        elif mode == "ip":
+            h = (ip_var.get() or "").strip()
+            if h:
+                return h
+        else:
+            sel = lb.curselection()
+            if sel and discovered and 0 <= sel[0] < len(discovered):
+                s = discovered[sel[0]]
+                return s.get("hostname", s["ip"]) if use_hostname_var.get() else s["ip"]
+        # Fallback: apply_server() already saved host when user left Step 1
+        return config["server"].get("host") or None
     def _do_smb_mount():
         host = _wizard_server_host()
         if not host:

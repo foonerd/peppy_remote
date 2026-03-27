@@ -7,6 +7,7 @@ Mounts Volumio's template share for remote template access.
 
 import os
 import subprocess
+from pathlib import Path
 
 from peppy_common import (
     SMB_MOUNT_BASE,
