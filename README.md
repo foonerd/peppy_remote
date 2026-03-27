@@ -2,7 +2,7 @@
 
 Remote display client for the [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) Volumio plugin. Display PeppyMeter visualizations on any Debian-based system (or Windows) by connecting to a Volumio server running the plugin.
 
-This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server’s first announcement before starting the meter (syncing screen). By default it syncs to the server’s theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
+This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server's first announcement before starting the meter (syncing screen). By default it syncs to the server's theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
 
 **Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Auto-discovery, config wizard, SMB or local templates, windowed/frameless/fullscreen modes.
 
@@ -11,7 +11,7 @@ This client uses the **same rendering code** as the Volumio plugin (turntable, c
 ### Version compatibility and startup
 
 - **Authoritative check:** The client compares its release with the **PeppyMeter Screensaver** version returned by Volumio over **HTTP** (`getRemoteConfig`). UDP discovery may include a `plugin_version` field from broadcasts on your LAN, but it is **not** used for compatibility decisions—only a successful HTTP response from the server you selected counts.
-- **Wait for Volumio:** After you pick a server (discovery or `--server`), the client retries HTTP every few seconds for up to **120 seconds** by default (see `--server-wait-timeout`). While waiting, a pygame window may show “Waiting for server” (or console messages if pygame is unavailable).
+- **Wait for Volumio:** After you pick a server (discovery or `--server`), the client retries HTTP every few seconds for up to **120 seconds** by default (see `--server-wait-timeout`). While waiting, a pygame window may show "Waiting for server" (or console messages if pygame is unavailable).
 - **Semver match:** If the server plugin is too old, does not advertise a version, or the release does not match the client, a **blocking** message explains the problem; the client then exits. Use **`--skip-version-check`** only if you understand the risk (e.g. temporary testing).
 - **Server logs:** When the remote sends control messages with **`client_version`**, the plugin can log comparisons at **Verbose** debug (see PeppyMeter Screensaver debug settings).
 
@@ -35,11 +35,31 @@ With custom install directory:
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --dir /opt/peppy_remote
 ```
 
-Use a specific **peppy_screensaver** branch (e.g. `experimental`) for Volumio handlers; default is `main`:
+### Branch selection
+
+The installer downloads files from two repos: **peppy_remote** (client scripts, fonts, icons) and **peppy_screensaver** (Volumio handlers). By default both use the `main` branch.
+
+Use **`--both`** (or **`-b`**) to set both repos to the same branch:
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --both experimental
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- -b experimental
 ```
+
+Use **`--remote-branch`** or **`--screensaver-branch`** to set each repo independently:
+
+```bash
+# Only screensaver handlers from experimental (remote files from main)
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --screensaver-branch experimental
+
+# Only remote files from experimental (handlers from main)
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --remote-branch experimental
+
+# Both set independently (equivalent to --both experimental)
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --remote-branch experimental --screensaver-branch experimental
+```
+
+`--both`/`-b` cannot be combined with `--remote-branch` or `--screensaver-branch` (the installer will error). Use either `--both` for both repos, or the per-repo flags individually.
 
 Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
 
@@ -47,9 +67,9 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 1. **Dependencies:** Installs `python3` (3.12+ required; must match server), `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
 2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the repo.
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the peppy_remote repo.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
-5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from peppy_screensaver into `screensaver/` (use `-b <branch>` to pick a branch; default is `main`).
+5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from peppy_screensaver into `screensaver/`. Use `--both`/`-b` to set both repos to the same branch, or `--remote-branch` / `--screensaver-branch` to set each independently (default: `main` for both).
 6. **Fonts:** Downloads bundled fonts to `screensaver/fonts/` so themes render correctly.
 7. **Patches:** Patches handler files to use local format icons first for all formats.
 8. **Python env:** Creates a virtual environment in `venv/` and installs required packages (pygame, pillow, python-socketio, cairosvg, etc.).
@@ -60,7 +80,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 ### Windows
 
-**Prerequisites:** Windows 10 or 11. The installer needs **Python 3.12+** and **Git** (Python version must match the server; Volumio uses 3.12). If either is missing, the script will check, list what’s missing, and ask: *“Install missing dependencies via winget? [Y/n]”*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
+**Prerequisites:** Windows 10 or 11. The installer needs **Python 3.12+** and **Git** (Python version must match the server; Volumio uses 3.12). If either is missing, the script will check, list what's missing, and ask: *"Install missing dependencies via winget? [Y/n]"*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
 
 **First-time PowerShell:** You may need to allow script execution once:
 
@@ -80,8 +100,18 @@ irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | ie
 irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
 .\install.ps1 -Server volumio
 .\install.ps1 -Dir C:\peppy_remote
-.\install.ps1 -b experimental   # peppy_screensaver branch (default: main)
+.\install.ps1 -b experimental                      # both repos from experimental
+.\install.ps1 -Both experimental                    # same as -b (preferred)
+.\install.ps1 -RemoteBranch experimental            # peppy_remote repo only
+.\install.ps1 -ScreensaverBranch experimental       # peppy_screensaver repo only
 .\install.ps1 -Help
+```
+
+**Using experimental branch:** When installing from the `experimental` branch, download the installer from that branch too so you have the latest installer code:
+
+```powershell
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.ps1 -OutFile install.ps1
+.\install.ps1 -b experimental
 ```
 
 **Alternative: from Command Prompt (cmd.exe)** — if the above fails in PowerShell (e.g. execution policy or encoding), run from Command Prompt:
@@ -97,8 +127,8 @@ Download `install.ps1` to that folder first (e.g. via browser or `curl`), or run
 
 1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
 2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the repo.
-4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from peppy_screensaver (use `-b <branch>` for a different branch; default is `main`).
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the peppy_remote repo.
+4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from peppy_screensaver. Use `-Both`/`-b` to set both repos to the same branch, or `-RemoteBranch` / `-ScreensaverBranch` to set each independently (default: `main` for both).
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
 6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
 7. **Cairo runtime:** If the Cairo C library is not already available, the installer downloads a standalone Cairo DLL (from [preshing/cairo-windows](https://github.com/preshing/cairo-windows)) into `cairo\` and configures the launchers so the client finds it. Required for the full meter (cassette, turntable, basic skins).
@@ -107,7 +137,7 @@ Download `install.ps1` to that folder first (e.g. via browser or `curl`), or run
 
 **UTF-8 on Windows:** The installer and launchers force UTF-8 (PowerShell output encoding during install; `PYTHONUTF8=1` when running the client) so file and console encoding match Linux and avoid cp950/cp1252 issues. For system-wide UTF-8: Settings > Time & language > Language & region > Administrative language settings > Change system locale > check "Beta: Use Unicode UTF-8 for worldwide language support".
 
-**Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). In the wizard, when you choose SMB, use **Mount now** to test the UNC path; on success the Meter theme step will list server themes. You can also choose “local” in the wizard and point to a folder on your PC.
+**Templates on Windows:** The client does **not** mount SMB drives. It uses **UNC paths** (e.g. `\\volumio\Internal Storage\peppy_screensaver\templates`). Ensure Volumio SMB is enabled and the share is reachable from Windows (same network, firewall allows SMB). In the wizard, when you choose SMB, use **Mount now** to test the UNC path; on success the Meter theme step will list server themes. You can also choose "local" in the wizard and point to a folder on your PC.
 
 **Cairo on Windows:** The installer installs a Cairo runtime when needed. If you still see "no library called cairo" or "cannot load library libcairo-2.dll", see Troubleshooting for manual options (GTK3 Runtime or MSYS2).
 
@@ -172,7 +202,7 @@ Run the configuration wizard for easy setup:
 On first run, if you launch from a desktop shortcut, the GUI wizard opens automatically.
 
 The wizard configures:
-- Server (auto-discover, enter hostname, or enter IP; after discovery you can choose “Use hostname” or “Use IP address” for the selected server)
+- Server (auto-discover, enter hostname, or enter IP; after discovery you can choose "Use hostname" or "Use IP address" for the selected server)
 - Display mode (windowed, fullscreen)
 - Template sources (SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes in the next step)
 - **Meter theme**: Use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
@@ -183,7 +213,7 @@ Settings are saved to `~/peppy_remote/config.json` and persist between runs.
 
 ### Fixed theme (kiosk)
 
-To lock this client to a specific meter theme (e.g. one display always showing the same skin), set **Meter theme** in the wizard to something other than "Use server theme", or edit `config.json` and set both `display.meter_folder` (template folder name, e.g. `1920x720_5skins`) and `display.meter` (section name from that folder’s `meters.txt`, or `"random"` for random from that folder, or a comma-separated list for random from that list). When both are set, the client ignores server theme changes and never reloads for theme updates. Leave both `null` to follow the server theme.
+To lock this client to a specific meter theme (e.g. one display always showing the same skin), set **Meter theme** in the wizard to something other than "Use server theme", or edit `config.json` and set both `display.meter_folder` (template folder name, e.g. `1920x720_5skins`) and `display.meter` (section name from that folder's `meters.txt`, or `"random"` for random from that folder, or a comma-separated list for random from that list). When both are set, the client ignores server theme changes and never reloads for theme updates. Leave both `null` to follow the server theme.
 
 ### Display Modes
 
@@ -317,9 +347,9 @@ Command-line arguments override config file settings:
 ## How It Works
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
-   - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server’s current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility—see [Version compatibility and startup](#version-compatibility-and-startup)).
-2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin’s advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s).
-3. **Startup / syncing**: After the version check passes, the client shows a “Waiting for data from server” / “Please wait a moment.” screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server’s current theme (including when the server uses random meter) before drawing.
+   - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server's current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility—see [Version compatibility and startup](#version-compatibility-and-startup)).
+2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin's advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s).
+3. **Startup / syncing**: After the version check passes, the client shows a "Waiting for data from server" / "Please wait a moment." screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server's current theme (including when the server uses random meter) before drawing.
 4. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
    - Uses direct IP address from discovery for reliable connectivity
    - Endpoint: `/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig`
@@ -336,7 +366,7 @@ For server random-meter sync, discovery `active_meter` is treated as the runtime
 
 ## Installation Structure
 
-Handlers and format icons are downloaded from the [peppy_screensaver](https://github.com/foonerd/peppy_screensaver) repo (main branch). PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
+Handlers and format icons are downloaded from the [peppy_screensaver](https://github.com/foonerd/peppy_screensaver) repo. Client scripts, fonts, and icons are downloaded from the [peppy_remote](https://github.com/foonerd/peppy_remote) repo. Both default to the `main` branch; use the branch selection flags (`--both`/`-b`, `--remote-branch`, `--screensaver-branch`) to change this. PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
 
 After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
 
@@ -443,7 +473,7 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Test endpoint manually: `curl "http://<server_ip>:3000/api/v1/pluginEndpoint?endpoint=peppy_screensaver&method=getRemoteConfig"`
 - Check Volumio logs for plugin errors
 
-**Version mismatch / “server plugin is too old” / client exits after wait:**
+**Version mismatch / "server plugin is too old" / client exits after wait:**
 - Match **peppy_remote** to the **PeppyMeter Screensaver** release on Volumio (same semver, e.g. 3.3.2 with 3.3.2).
 - Ensure Volumio is up and the plugin is enabled so HTTP `getRemoteConfig` succeeds; increase **`--server-wait-timeout`** if the device is slow to boot.
 - For emergency testing only: **`--skip-version-check`** (expect undefined behavior if versions differ).
@@ -465,8 +495,8 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Check volumio_*.py files downloaded: `ls ~/peppy_remote/screensaver/volumio_*.py`
 - Check PeppyMeter cloned: `ls ~/peppy_remote/screensaver/peppymeter/`
 
-**Theme restarts or flicker when server hasn’t changed:**
-- The client only reloads when the **theme folder** or **theme name** would change. If you see “Config/folder+theme unchanged, continuing.” in the log, the meter correctly did not restart. If restarts still happen, check that the server plugin is up to date (protocol v3 with `active_meter` in discovery).
+**Theme restarts or flicker when server hasn't changed:**
+- The client only reloads when the **theme folder** or **theme name** would change. If you see "Config/folder+theme unchanged, continuing." in the log, the meter correctly did not restart. If restarts still happen, check that the server plugin is up to date (protocol v3 with `active_meter` in discovery).
 
 **Server Only mode — EADDRINUSE on restart:**
 - In Server Only (headless) mode, the plugin closes UDP sockets and the spectrum pipe on shutdown so the next start can bind cleanly. If you see "Address already in use" after a restart, ensure the previous PeppyMeter process has fully exited (check `ps` for volumio_peppymeter or peppy processes).
@@ -484,7 +514,7 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Close this PowerShell window, open a **new** PowerShell, then run the install script again so the updated PATH (Python/Git) is visible.
 - If winget is missing, install [App Installer](https://apps.microsoft.com/store/detail/app-installer/9NBLGGH4NNS1) from Microsoft Store (includes winget on Windows 11), or install Python and Git manually from [python.org](https://www.python.org/downloads/) and [git-scm.com](https://git-scm.com/download/win).
 
-**Windows – Execution policy / script won’t run:**
+**Windows – Execution policy / script won't run:**
 - Run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 - Or download `install.ps1` and run: `powershell -ExecutionPolicy Bypass -File install.ps1`
 
@@ -493,7 +523,7 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - If UNC fails, use the config wizard and choose **local** templates; copy `Internal Storage\peppy_screensaver\templates` (and `templates_spectrum`) from the server to a folder on your PC and point the wizard to that folder.
 - Check Windows Firewall allows SMB (File and Printer Sharing) for the relevant network profile.
 
-**Windows – “No servers found”:**
+**Windows – "No servers found":**
 - Ensure the Volumio machine and Windows PC are on the same network. Try: `ping volumio.local` or `ping <volumio_ip>`.
 - Run with a fixed server: `.\peppy_remote.cmd --server <volumio_ip_or_hostname>`.
 - Windows Firewall may block UDP discovery; allow the client (or Python) for Private networks if needed.

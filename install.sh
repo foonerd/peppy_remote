@@ -8,6 +8,11 @@
 # Or with server pre-configured:
 #   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --server volumio
 #
+# Branch selection (default: both repos use main):
+#   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- -b experimental
+#   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --remote-branch experimental
+#   curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --screensaver-branch experimental
+#
 # This installs PeppyMeter Remote Client to ~/peppy_remote/
 # Everything is self-contained in that folder.
 #
@@ -26,6 +31,11 @@ PEPPYMETER_REPO="https://github.com/foonerd/PeppyMeter"
 INSTALL_DIR="${PEPPY_REMOTE_DIR:-$HOME/peppy_remote}"
 SERVER_HOST=""
 
+# Branch tracking for conflict detection
+BOTH_BRANCH=""
+REMOTE_BRANCH_SET=false
+SCREENSAVER_BRANCH_SET=false
+
 # =============================================================================
 # Parse arguments
 # =============================================================================
@@ -39,8 +49,18 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR="$2"
             shift 2
             ;;
-        --branch|-b)
+        --both|-b)
+            BOTH_BRANCH="$2"
+            shift 2
+            ;;
+        --remote-branch)
+            REPO_BRANCH="$2"
+            REMOTE_BRANCH_SET=true
+            shift 2
+            ;;
+        --screensaver-branch)
             SCREENSAVER_REPO_BRANCH="$2"
+            SCREENSAVER_BRANCH_SET=true
             shift 2
             ;;
         --help|-h)
@@ -51,10 +71,18 @@ while [[ $# -gt 0 ]]; do
             echo "  curl -sSL <url>/install.sh | bash -s -- [options]"
             echo ""
             echo "Options:"
-            echo "  --server, -s <host>   Pre-configure server hostname/IP"
-            echo "  --dir, -d <path>      Install directory (default: ~/peppy_remote)"
-            echo "  --branch, -b <name>  Peppy screensaver branch (default: main)"
-            echo "  --help, -h            Show this help"
+            echo "  --server, -s <host>              Pre-configure server hostname/IP"
+            echo "  --dir, -d <path>                 Install directory (default: ~/peppy_remote)"
+            echo ""
+            echo "Branch selection (default: both repos use main):"
+            echo "  --both, -b <branch>              Set both repos to the same branch"
+            echo "  --remote-branch <branch>         peppy_remote repo branch only"
+            echo "  --screensaver-branch <branch>    peppy_screensaver repo branch only"
+            echo ""
+            echo "  --both/-b cannot be combined with --remote-branch or --screensaver-branch."
+            echo "  --remote-branch and --screensaver-branch can be used together."
+            echo ""
+            echo "  --help, -h                       Show this help"
             echo ""
             echo "Environment variables:"
             echo "  PEPPY_REMOTE_DIR      Override install directory"
@@ -68,6 +96,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 # =============================================================================
+# Branch conflict detection
+# =============================================================================
+if [ -n "$BOTH_BRANCH" ]; then
+    if $REMOTE_BRANCH_SET || $SCREENSAVER_BRANCH_SET; then
+        echo "ERROR: --both/-b cannot be combined with --remote-branch or --screensaver-branch"
+        echo "Use --both/-b to set both repos to the same branch,"
+        echo "or --remote-branch and --screensaver-branch individually."
+        exit 1
+    fi
+    REPO_BRANCH="$BOTH_BRANCH"
+    SCREENSAVER_REPO_BRANCH="$BOTH_BRANCH"
+fi
+
+# =============================================================================
 # Banner
 # =============================================================================
 echo ""
@@ -79,9 +121,8 @@ echo "Install directory: $INSTALL_DIR"
 if [ -n "$SERVER_HOST" ]; then
     echo "Server: $SERVER_HOST"
 fi
-if [ "$SCREENSAVER_REPO_BRANCH" != "main" ]; then
-    echo "Screensaver branch: $SCREENSAVER_REPO_BRANCH"
-fi
+echo "Remote files:  $REPO_BRANCH (peppy_remote)"
+echo "Handler files: $SCREENSAVER_REPO_BRANCH (peppy_screensaver)"
 echo ""
 
 # =============================================================================
