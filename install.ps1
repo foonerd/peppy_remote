@@ -372,7 +372,26 @@ Download-File "$base/peppy_remote.py" (Join-Path $InstallDir "peppy_remote.py")
 Download-File "$base/uninstall.ps1" (Join-Path $InstallDir "uninstall.ps1")
 Download-File "$base/peppy_remote.svg" (Join-Path $InstallDir "peppy_remote.svg")
 Download-File "$base/peppy_remote_config.svg" (Join-Path $InstallDir "peppy_remote_config.svg")
-Write-Host "  Downloaded: peppy_remote.py, uninstall.ps1, icons"
+
+# Download lib/ modules (modular peppy_remote components)
+$libDir = Join-Path $InstallDir "lib"
+New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+$libModules = @(
+    "peppy_common.py",
+    "peppy_version.py",
+    "peppy_network.py",
+    "peppy_persist.py",
+    "peppy_receivers.py",
+    "peppy_spectrum.py",
+    "peppy_smb.py",
+    "peppy_asset.py",
+    "peppy_wizard_cli.py",
+    "peppy_wizard_gui.py"
+)
+foreach ($mod in $libModules) {
+    Download-File "$base/lib/$mod" (Join-Path $libDir $mod)
+}
+Write-Host "  Downloaded: peppy_remote.py, uninstall.ps1, icons, lib/ ($($libModules.Count) modules)"
 
 # --- Clone PeppyMeter ---
 Write-Host ""
@@ -574,7 +593,7 @@ $launcherPs1 = @"
 `$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
 $cairoPathLinePs1
 `$env:PYTHONUTF8 = "1"
-`$env:PYTHONPATH = "`$ScriptDir\screensaver;`$ScriptDir\screensaver\peppymeter;`$ScriptDir\screensaver\spectrum"
+`$env:PYTHONPATH = "`$ScriptDir\lib;`$ScriptDir\screensaver;`$ScriptDir\screensaver\peppymeter;`$ScriptDir\screensaver\spectrum"
 & "`$ScriptDir\venv\Scripts\python.exe" "`$ScriptDir\peppy_remote.py" @args
 "@
 Set-Content (Join-Path $InstallDir "peppy_remote.ps1") -Value $launcherPs1
@@ -584,7 +603,7 @@ $launcherCmd = @"
 set SCRIPT_DIR=%~dp0
 $cairoPathLineCmd
 set PYTHONUTF8=1
-set PYTHONPATH=%SCRIPT_DIR%screensaver;%SCRIPT_DIR%screensaver\peppymeter;%SCRIPT_DIR%screensaver\spectrum
+set PYTHONPATH=%SCRIPT_DIR%lib;%SCRIPT_DIR%screensaver;%SCRIPT_DIR%screensaver\peppymeter;%SCRIPT_DIR%screensaver\spectrum
 "%SCRIPT_DIR%venv\Scripts\python.exe" "%SCRIPT_DIR%peppy_remote.py" %*
 "@
 Set-Content (Join-Path $InstallDir "peppy_remote.cmd") -Value $launcherCmd

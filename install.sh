@@ -212,7 +212,26 @@ chmod +x "$INSTALL_DIR/uninstall.sh"
 curl -sSL "$REPO_URL/raw/$REPO_BRANCH/peppy_remote.svg" -o "$INSTALL_DIR/peppy_remote.svg"
 curl -sSL "$REPO_URL/raw/$REPO_BRANCH/peppy_remote_config.svg" -o "$INSTALL_DIR/peppy_remote_config.svg"
 
+# Download lib/ modules (modular peppy_remote components)
+mkdir -p "$INSTALL_DIR/lib"
+LIB_MODULES=(
+    "peppy_common.py"
+    "peppy_version.py"
+    "peppy_network.py"
+    "peppy_persist.py"
+    "peppy_receivers.py"
+    "peppy_spectrum.py"
+    "peppy_smb.py"
+    "peppy_asset.py"
+    "peppy_wizard_cli.py"
+    "peppy_wizard_gui.py"
+)
+for mod in "${LIB_MODULES[@]}"; do
+    curl -sSL "$REPO_URL/raw/$REPO_BRANCH/lib/$mod" -o "$INSTALL_DIR/lib/$mod"
+done
+
 echo "  Downloaded: peppy_remote.py"
+echo "  Downloaded: lib/ (${#LIB_MODULES[@]} modules)"
 echo "  Downloaded: uninstall.sh"
 echo "  Downloaded: peppy_remote.svg"
 echo "  Downloaded: peppy_remote_config.svg"
@@ -409,10 +428,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/venv/bin/activate"
 
 # Set PYTHONPATH to include:
-# 1. screensaver/ - for volumio_*.py modules
-# 2. screensaver/peppymeter/ - for base PeppyMeter modules (configfileparser, etc.)
-# 3. screensaver/spectrum/ - for PeppySpectrum modules (spectrum.py, spectrumutil.py, etc.)
-export PYTHONPATH="$SCRIPT_DIR/screensaver:$SCRIPT_DIR/screensaver/peppymeter:$SCRIPT_DIR/screensaver/spectrum:$PYTHONPATH"
+# 1. lib/ - for peppy_remote lib modules (peppy_common, peppy_network, etc.)
+# 2. screensaver/ - for volumio_*.py modules
+# 3. screensaver/peppymeter/ - for base PeppyMeter modules (configfileparser, etc.)
+# 4. screensaver/spectrum/ - for PeppySpectrum modules (spectrum.py, spectrumutil.py, etc.)
+export PYTHONPATH="$SCRIPT_DIR/lib:$SCRIPT_DIR/screensaver:$SCRIPT_DIR/screensaver/peppymeter:$SCRIPT_DIR/screensaver/spectrum:$PYTHONPATH"
 
 # SDL environment for desktop display (not framebuffer)
 # Must be set BEFORE pygame import - unset lets SDL auto-detect (x11, wayland)
