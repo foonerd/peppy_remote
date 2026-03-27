@@ -138,8 +138,3 @@ class SMBMount:
     def templates_path(self):
         """Path to templates directory."""
         return self.mount_point / 'templates'
-
-
-# =============================================================================
-# Level Data Receiver
-

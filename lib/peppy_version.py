@@ -242,4 +242,3 @@ def check_remote_version_and_exit_if_mismatch(
         ],
     )
     sys.exit(1)
-

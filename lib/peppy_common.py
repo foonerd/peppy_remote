@@ -350,5 +350,3 @@ def _is_ip_address(host):
 
 
 PERSIST_FILE = os.path.join(tempfile.gettempdir(), 'peppy_persist')
-
-

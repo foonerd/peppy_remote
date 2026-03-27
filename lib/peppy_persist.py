@@ -141,5 +141,3 @@ class PersistManager:
         """Cleanup on shutdown - cancel timer and remove file."""
         self._cancel_timer()
         self._remove_persist_file()
-
-

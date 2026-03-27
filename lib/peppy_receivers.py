@@ -394,8 +394,3 @@ class RemoteDataSource:
     
     def get_current_mono_channel_data(self):
         return self.level_receiver.mono
-
-
-# =============================================================================
-# Remote Spectrum Output (for remote spectrum visualization)
-

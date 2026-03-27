@@ -233,8 +233,3 @@ def _patch_handlers_for_local_icons(screensaver_path):
             print(f"  Warning: Failed to patch {handler_file}: {e}")
     
     return patched_count
-
-
-# =============================================================================
-# SMB Mount Manager
-

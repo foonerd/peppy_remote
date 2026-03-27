@@ -344,8 +344,3 @@ class RemoteSpectrumOutput:
         if self.sp and hasattr(self.sp, '_prev_bar_heights'):
             return list(self.sp._prev_bar_heights)
         return None
-
-
-# =============================================================================
-# Parse server config to get (meter_folder, chosen_meter) without writing
-

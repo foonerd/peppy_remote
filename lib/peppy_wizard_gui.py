@@ -581,4 +581,3 @@ def run_wizard_ui(initial_config=None):
     if result['config'] is not None and result['run_after']:
         return result['config']
     return None
-

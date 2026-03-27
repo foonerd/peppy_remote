@@ -275,8 +275,3 @@ class ConfigFetcher:
     def has_changed(self, new_version):
         """Check if config version has changed."""
         return new_version and new_version != self.cached_version
-
-
-# =============================================================================
-# Persist Manager - manages peppy_persist in system temp dir (countdown display)
-
