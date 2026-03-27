@@ -150,6 +150,21 @@ def _norm_str(s):
     return (s or '').strip()
 
 
+def _is_kiosk_random_mode(client_override):
+    """Return True if client_override specifies random or comma-separated list mode.
+
+    In kiosk-random, the configured meter value is 'random' or a comma-separated
+    list of section names. Peppymeter resolves this to an actual section name at
+    runtime, so reload comparisons must only consider the folder - the meter name
+    will always differ from the literal 'random'/list string.
+    """
+    if not client_override:
+        return False
+    _, meter = client_override
+    m = (meter or '').strip().lower()
+    return m == 'random' or ',' in m
+
+
 # Seconds to retry HTTP to Volumio before treating server as offline (version check phase only)
 SERVER_WAIT_TIMEOUT_SEC = 120.0
 SERVER_RETRY_INTERVAL_SEC = 2.0
@@ -1588,6 +1603,7 @@ class ConfigVersionListener(threading.Thread):
         self._sock = None
         self.bound_port = None  # Actual local UDP port (may differ if multiple clients on one host)
         self._bound_event = threading.Event()
+        self.ignore_active_meter = False  # True in kiosk mode: skip server active_meter changes
 
     def wait_until_bound(self, timeout=5.0):
         """Wait for bind attempt to finish (success or failure). Returns True if bound to a port."""
@@ -1642,13 +1658,16 @@ class ConfigVersionListener(threading.Thread):
                             self.reload_requested = True
                     
                     # Check active_meter change (random meter sync, protocol v3+)
-                    new_meter = info.get('active_meter', '')
-                    if new_meter:
-                        current_meter = self.current_version_holder.get('active_meter', '')
-                        if _norm_str(new_meter) != _norm_str(current_meter):
-                            # Active meter changed - trigger reload with new meter name
-                            self.new_active_meter = _norm_str(new_meter)
-                            self.reload_requested = True
+                    # In kiosk mode (ignore_active_meter=True), server active_meter
+                    # broadcasts are irrelevant - the client picks its own random meter.
+                    if not self.ignore_active_meter:
+                        new_meter = info.get('active_meter', '')
+                        if new_meter:
+                            current_meter = self.current_version_holder.get('active_meter', '')
+                            if _norm_str(new_meter) != _norm_str(current_meter):
+                                # Active meter changed - trigger reload with new meter name
+                                self.new_active_meter = _norm_str(new_meter)
+                                self.reload_requested = True
                             
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
@@ -3583,6 +3602,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         _om = (str(_display.get("meter") or "")).strip()
         client_override = (_of, _om) if (_of and _om) else None
 
+        # In kiosk-random mode, suppress server active_meter broadcasts from
+        # triggering reloads - the client picks its own random meter locally.
+        if _is_kiosk_random_mode(client_override):
+            version_listener.ignore_active_meter = True
+
         def _check_reload_callback():
             """Return True only when we actually need to reload (folder or theme would change)."""
             if not version_listener.reload_requested:
@@ -3604,7 +3628,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 config_content, templates_path, active_meter_override, client_theme_override=client_override
             )
             if (_norm_str(new_meter_folder) == _norm_str(current_folder) and
-                    _norm_str(new_chosen_meter) == _norm_str(current_meter)):
+                    (_is_kiosk_random_mode(client_override) or
+                     _norm_str(new_chosen_meter) == _norm_str(current_meter))):
                 version_listener.reload_requested = False
                 version_listener.new_active_meter = None
                 current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
@@ -3659,7 +3684,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                         config_content, templates_path, active_meter_override, client_theme_override=client_override
                     )
                     if (_norm_str(new_meter_folder) == _norm_str(current_folder) and
-                            _norm_str(new_chosen_meter) == _norm_str(current_meter)):
+                            (_is_kiosk_random_mode(client_override) or
+                             _norm_str(new_chosen_meter) == _norm_str(current_meter))):
                         current_version_holder['version'] = new_ver
                         current_version_holder['active_meter'] = _norm_str(new_chosen_meter) or _norm_str(current_meter)
                         current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder) or _norm_str(current_folder)
@@ -4217,3 +4243,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
