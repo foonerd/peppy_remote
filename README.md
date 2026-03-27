@@ -17,7 +17,7 @@ This client uses the **same rendering code** as the Volumio plugin (turntable, c
 
 ## Quick Install
 
-One-liner installation:
+One-liner installation (both repos from `main` branch):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash
@@ -35,41 +35,131 @@ With custom install directory:
 curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --dir /opt/peppy_remote
 ```
 
-### Branch selection
+Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
 
-The installer downloads files from two repos: **peppy_remote** (client scripts, fonts, icons) and **peppy_screensaver** (Volumio handlers). By default both use the `main` branch.
+## Testing from experimental branch
 
-Use **`--both`** (or **`-b`**) to set both repos to the same branch:
+> **This section is for testers.** If you were asked to install from the experimental branch, follow these instructions exactly. Do not mix with the Quick Install instructions above.
+
+The installer downloads files from two GitHub repos:
+
+| Repo | What it provides |
+|------|-----------------|
+| **peppy_remote** | Client script, fonts, format icons, installer itself |
+| **peppy_screensaver** | Volumio handlers (turntable, cassette, basic, spectrum, etc.) |
+
+When testing experimental code, **both** the installer script and the downloaded content must come from the experimental branch. The installer on `main` may not have the latest flags or fixes.
+
+### Linux - experimental
+
+The curl URL points to the experimental branch so you get the latest installer. The `--both experimental` flag tells the installer to download all content files from experimental too:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --both experimental
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- -b experimental
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.sh | bash -s -- --both experimental
 ```
 
-Use **`--remote-branch`** or **`--screensaver-branch`** to set each repo independently:
+With server pre-configured:
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.sh | bash -s -- --both experimental --server volumio
+```
+
+### Windows - experimental
+
+The PowerShell one-liner (`irm ... | iex`) **cannot pass arguments**. You must download the installer first, then run it.
+
+**Step 1:** Download the installer from the experimental branch:
+
+```powershell
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.ps1 -OutFile install.ps1
+```
+
+**Step 2:** Run it:
+
+```powershell
+.\install.ps1 -Both experimental
+```
+
+With server pre-configured:
+
+```powershell
+.\install.ps1 -Both experimental -Server volumio
+```
+
+**If PowerShell blocks the script** (execution policy), use Command Prompt instead:
+
+```cmd
+powershell -ExecutionPolicy Bypass -File install.ps1 -Both experimental
+```
+
+**If the script fails after installing Python/Git via winget**, close ALL PowerShell/Command Prompt windows, open a new one, and run Step 2 again. This is a Windows PATH issue - newly installed programs are not visible until a new terminal session.
+
+### What the banner should show
+
+When the installer runs, the banner shows where files are coming from. For experimental on both repos it should read:
+
+```
+Remote files:  experimental (peppy_remote)
+Handler files: experimental (peppy_screensaver)
+```
+
+If you see `main` where you expected `experimental`, the wrong installer or flags were used.
+
+## Branch selection reference
+
+The installer supports three branch flags. By default both repos use `main`.
+
+| Flag (Linux) | Flag (Windows) | What it does |
+|--------------|----------------|--------------|
+| `--both <branch>` | `-Both <branch>` | Sets both repos to the same branch |
+| `--remote-branch <branch>` | `-RemoteBranch <branch>` | Sets peppy_remote repo only |
+| `--screensaver-branch <branch>` | `-ScreensaverBranch <branch>` | Sets peppy_screensaver repo only |
+| `-b <branch>` | `-b <branch>` | Legacy alias for `--both`/`-Both` |
+
+**Rules:**
+- `--both`/`-b` cannot be combined with `--remote-branch` or `--screensaver-branch`. The installer will error.
+- `--remote-branch` and `--screensaver-branch` can be used together for mixed scenarios.
+
+**Examples - Linux:**
+
+```bash
+# Both repos from main (default)
+curl -sSL .../main/install.sh | bash
+
+# Both repos from experimental
+curl -sSL .../experimental/install.sh | bash -s -- --both experimental
+
 # Only screensaver handlers from experimental (remote files from main)
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --screensaver-branch experimental
+curl -sSL .../main/install.sh | bash -s -- --screensaver-branch experimental
 
 # Only remote files from experimental (handlers from main)
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --remote-branch experimental
+curl -sSL .../experimental/install.sh | bash -s -- --remote-branch experimental
 
 # Both set independently (equivalent to --both experimental)
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh | bash -s -- --remote-branch experimental --screensaver-branch experimental
+curl -sSL .../experimental/install.sh | bash -s -- --remote-branch experimental --screensaver-branch experimental
 ```
 
-`--both`/`-b` cannot be combined with `--remote-branch` or `--screensaver-branch` (the installer will error). Use either `--both` for both repos, or the per-repo flags individually.
+**Examples - Windows** (download installer first, then run):
 
-Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
+```powershell
+.\install.ps1                                              # both repos from main
+.\install.ps1 -Both experimental                           # both repos from experimental
+.\install.ps1 -ScreensaverBranch experimental              # screensaver only from experimental
+.\install.ps1 -RemoteBranch experimental                   # remote only from experimental
+.\install.ps1 -RemoteBranch experimental -ScreensaverBranch experimental  # both explicit
+```
+
+> **Important:** When using `--remote-branch` to get remote files from a non-main branch, download the installer from that same branch. The installer script itself is a peppy_remote file - if you download it from `main` but ask for `--remote-branch experimental`, you get the old installer code with the new content files, which may not work as expected.
+
+## Linux installer details
 
 **What the Linux installer does:**
 
 1. **Dependencies:** Installs `python3` (3.12+ required; must match server), `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
 2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the peppy_remote repo.
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the peppy_remote repo branch.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
-5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from peppy_screensaver into `screensaver/`. Use `--both`/`-b` to set both repos to the same branch, or `--remote-branch` / `--screensaver-branch` to set each independently (default: `main` for both).
+5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from the peppy_screensaver repo branch into `screensaver/`.
 6. **Fonts:** Downloads bundled fonts to `screensaver/fonts/` so themes render correctly.
 7. **Patches:** Patches handler files to use local format icons first for all formats.
 8. **Python env:** Creates a virtual environment in `venv/` and installs required packages (pygame, pillow, python-socketio, cairosvg, etc.).
@@ -78,7 +168,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 11. **Config:** Writes `config.json`; use `--server` to pre-fill the server host.
 12. **Desktop shortcuts:** If `~/.local/share/applications` exists, creates **PeppyMeter Remote** (start client) and **PeppyMeter Remote (Configure)** (wrench icon, opens setup wizard).
 
-### Windows
+## Windows installer details
 
 **Prerequisites:** Windows 10 or 11. The installer needs **Python 3.12+** and **Git** (Python version must match the server; Volumio uses 3.12). If either is missing, the script will check, list what's missing, and ask: *"Install missing dependencies via winget? [Y/n]"*. Answer **Y** (or press Enter) to install via **winget** (Windows Package Manager); you may see a UAC prompt. If you answer **n**, the script exits with manual install links. If **winget** is not available, install Python and Git manually, then run the installer again.
 
@@ -88,47 +178,32 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-**One-liner install:**
+**One-liner install** (both repos from `main`, no branch options):
 
 ```powershell
 irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex
 ```
 
-**With options** (download the script first, then run with parameters; `iex` cannot pass arguments):
+> The one-liner cannot pass arguments. For branch selection, server config, or any other options, download the installer first then run it (see below).
+
+**With options** (download the script first, then run with parameters):
 
 ```powershell
 irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
 .\install.ps1 -Server volumio
 .\install.ps1 -Dir C:\peppy_remote
-.\install.ps1 -b experimental                      # both repos from experimental
-.\install.ps1 -Both experimental                    # same as -b (preferred)
-.\install.ps1 -RemoteBranch experimental            # peppy_remote repo only
-.\install.ps1 -ScreensaverBranch experimental       # peppy_screensaver repo only
+.\install.ps1 -Both experimental
+.\install.ps1 -RemoteBranch experimental
+.\install.ps1 -ScreensaverBranch experimental
 .\install.ps1 -Help
 ```
-
-**Using experimental branch:** When installing from the `experimental` branch, download the installer from that branch too so you have the latest installer code:
-
-```powershell
-irm https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.ps1 -OutFile install.ps1
-.\install.ps1 -b experimental
-```
-
-**Alternative: from Command Prompt (cmd.exe)** — if the above fails in PowerShell (e.g. execution policy or encoding), run from Command Prompt:
-
-```cmd
-cd %USERPROFILE%\AppData\Local\Temp
-powershell -ExecutionPolicy Bypass -File install.ps1 -b experimental
-```
-
-Download `install.ps1` to that folder first (e.g. via browser or `curl`), or run the download from PowerShell once: `irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile %USERPROFILE%\AppData\Local\Temp\install.ps1`.
 
 **What the installer does:**
 
 1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
 2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the peppy_remote repo.
-4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from peppy_screensaver. Use `-Both`/`-b` to set both repos to the same branch, or `-RemoteBranch` / `-ScreensaverBranch` to set each independently (default: `main` for both).
+3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the peppy_remote repo branch.
+4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from the peppy_screensaver repo branch.
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
 6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
 7. **Cairo runtime:** If the Cairo C library is not already available, the installer downloads a standalone Cairo DLL (from [preshing/cairo-windows](https://github.com/preshing/cairo-windows)) into `cairo\` and configures the launchers so the client finds it. Required for the full meter (cassette, turntable, basic skins).
@@ -366,7 +441,7 @@ For server random-meter sync, discovery `active_meter` is treated as the runtime
 
 ## Installation Structure
 
-Handlers and format icons are downloaded from the [peppy_screensaver](https://github.com/foonerd/peppy_screensaver) repo. Client scripts, fonts, and icons are downloaded from the [peppy_remote](https://github.com/foonerd/peppy_remote) repo. Both default to the `main` branch; use the branch selection flags (`--both`/`-b`, `--remote-branch`, `--screensaver-branch`) to change this. PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
+The installer downloads files from two repos. Client scripts, fonts, and icons come from [peppy_remote](https://github.com/foonerd/peppy_remote). Volumio handlers and format icons come from [peppy_screensaver](https://github.com/foonerd/peppy_screensaver). Both default to the `main` branch; use `--both`/`-Both` to set both to another branch, or `--remote-branch`/`--screensaver-branch` (`-RemoteBranch`/`-ScreensaverBranch` on Windows) to set each independently. See [Branch selection reference](#branch-selection-reference) for full details. PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
 
 After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
 
