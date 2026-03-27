@@ -2414,6 +2414,15 @@ class LevelReceiver:
                     self.last_update = time.time()
             except socket.timeout:
                 continue
+            except OSError as e:
+                # Windows raises WinError 10054 (WSAECONNRESET) on UDP sockets
+                # when an ICMP port-unreachable is received after a send
+                # (heartbeat or registration). This is harmless - continue.
+                if getattr(e, 'winerror', None) == 10054:
+                    continue
+                if self._running:
+                    print(f"Level receiver error: {e}")
+                break
             except Exception as e:
                 if self._running:
                     print(f"Level receiver error: {e}")
@@ -2537,6 +2546,15 @@ class SpectrumReceiver:
                             
             except socket.timeout:
                 continue
+            except OSError as e:
+                # Windows raises WinError 10054 (WSAECONNRESET) on UDP sockets
+                # when an ICMP port-unreachable is received after a send.
+                # This is harmless on UDP - continue receiving.
+                if getattr(e, 'winerror', None) == 10054:
+                    continue
+                if self._running:
+                    print(f"Spectrum receiver error: {e}")
+                break
             except Exception as e:
                 if self._running:
                     print(f"Spectrum receiver error: {e}")
