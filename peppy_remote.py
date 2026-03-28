@@ -63,6 +63,12 @@ from peppy_common import (
     load_config,
     is_first_run,
     save_config,
+    load_config_store,
+    get_profile,
+    get_profile_list,
+    get_active_profile_id,
+    set_active_profile,
+    save_config_store,
 )
 from peppy_version import check_remote_version_and_exit_if_mismatch
 from peppy_network import ServerDiscovery, ConfigVersionListener, ConfigFetcher
@@ -1086,6 +1092,10 @@ def main():
                        help='Enable per-packet spectrum trace logging')
     parser.add_argument('--trace-network', action='store_true',
                        help='Enable network connection trace logging')
+    parser.add_argument('--profile', '-p',
+                       help='Start with named profile (name or ID)')
+    parser.add_argument('--wizard-debug', action='store_true',
+                       help='Enable debug logging before wizard runs (for troubleshooting wizard itself)')
     parser.add_argument('--version', '-V', action='store_true',
                        help='Show version and exit')
     parser.add_argument('--skip-version-check', action='store_true',
@@ -1099,21 +1109,47 @@ def main():
         print(f"peppy_remote {__version__}")
         sys.exit(0)
     
-    # Run configuration wizard if requested OR on first run (only if we have a terminal)
+    # --wizard-debug: activate debug logging before wizard runs
+    # Sets module-level globals directly so log_client() works in wizard code
+    if args.wizard_debug:
+        import peppy_common
+        peppy_common.CLIENT_DEBUG_LEVEL = 'verbose'
+        peppy_common.CLIENT_DEBUG_TRACE['wizard'] = True
+        log_client("Wizard debug enabled via --wizard-debug", "basic")
+    
+    # --profile: select profile by name or ID before loading config
+    if args.profile and not (args.config or args.config_text):
+        store = load_config_store()
+        profile_list = get_profile_list(store)
+        matched_id = None
+        search = args.profile.strip().lower()
+        # Try exact ID match first, then name match
+        for pid, name, host in profile_list:
+            if pid == search:
+                matched_id = pid
+                break
+        if not matched_id:
+            for pid, name, host in profile_list:
+                if (name or '').lower() == search:
+                    matched_id = pid
+                    break
+        if matched_id:
+            set_active_profile(store, matched_id)
+            save_config_store(store)
+            log_client(f"Profile selected via --profile: {matched_id!r}", "basic")
+        else:
+            print(f"Profile not found: {args.profile}")
+            print("Available profiles:")
+            for pid, name, host in profile_list:
+                host_str = f" ({host})" if host else ""
+                print(f"  {name}{host_str}  [id: {pid}]")
+            sys.exit(1)
+    
+    # Run configuration wizard if requested OR on first run
     run_wizard = args.config or args.config_text
     
-    if not run_wizard and has_terminal and is_first_run():
-        print("=" * 50)
-        print(" Welcome to PeppyMeter Remote Client!")
-        print("=" * 50)
-        print()
-        print("This appears to be your first run.")
-        print("Let's configure your settings.")
-        print()
-        input("Press Enter to continue...")
-        run_wizard = True
-    elif not run_wizard and not has_terminal and is_first_run():
-        # No terminal but first run — try GUI wizard (e.g. launched from desktop)
+    if not run_wizard and is_first_run():
+        # First run - let wizard handle the welcome message
         run_wizard = True
     
     if run_wizard:
@@ -1140,7 +1176,7 @@ def main():
             return
         config = wizard_config
     else:
-        # Load config from file
+        # Load config from file (active profile)
         config = load_config()
     
     # Command-line arguments override config file
