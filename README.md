@@ -4,7 +4,7 @@ Remote display client for the [PeppyMeter Screensaver](https://github.com/fooner
 
 This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server's first announcement before starting the meter (syncing screen). By default it syncs to the server's theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
 
-**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Auto-discovery, config wizard, SMB or local templates, windowed/frameless/fullscreen modes.
+**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
 
 **Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.3.2). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
 
@@ -157,7 +157,7 @@ curl -sSL .../experimental/install.sh | bash -s -- --remote-branch experimental 
 
 1. **Dependencies:** Installs `python3` (3.12+ required; must match server), `python3-pip`, `python3-venv`, `python3-tk`, `git`, `cifs-utils`, and SDL2 packages (libsdl2-2.0-0, libsdl2-ttf, libsdl2-image, libsdl2-mixer).
 2. **Directory:** Creates the install folder (default `~/peppy_remote`). If it exists, asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.sh`, and SVG icons from the peppy_remote repo branch.
+3. **Downloads:** Fetches `peppy_remote.py`, `lib/` modules (10 files), `uninstall.sh`, and SVG icons from the peppy_remote repo branch.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver/peppymeter` and `screensaver/spectrum`.
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) from the peppy_screensaver repo branch into `screensaver/`.
 6. **Fonts:** Downloads bundled fonts to `screensaver/fonts/` so themes render correctly.
@@ -202,7 +202,7 @@ irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -Out
 
 1. **Dependencies:** Checks for Python 3.12+ and Git. Python version must match the server. If missing, prompts to install via winget (Python.Python.3.12, Git.Git). After winget installs, it refreshes PATH and re-checks; if still not visible, it asks you to close and reopen PowerShell and run the script again.
 2. **Directory:** Creates the install folder (default: `%USERPROFILE%\peppy_remote`, e.g. `C:\Users\YourName\peppy_remote`). If the folder already exists, it asks whether to remove and reinstall.
-3. **Downloads:** Fetches `peppy_remote.py`, `uninstall.ps1`, and SVG icons from the peppy_remote repo branch.
+3. **Downloads:** Fetches `peppy_remote.py`, `lib/` modules (10 files), `uninstall.ps1`, and SVG icons from the peppy_remote repo branch.
 4. **Repos:** Clones PeppyMeter and PeppySpectrum via Git into `screensaver\peppymeter` and `screensaver\spectrum`. Volumio handlers are downloaded from the peppy_screensaver repo branch.
 5. **Volumio handlers:** Downloads Volumio custom handlers (turntable, cassette, spectrum, etc.) and format icons into `screensaver\`.
 6. **Python env:** Creates a virtual environment in `venv\` and installs required packages (pygame, pillow, python-socketio, etc.).
@@ -223,9 +223,11 @@ irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -Out
 .\peppy_remote.cmd
 .\peppy_remote.cmd --windowed
 .\peppy_remote.cmd --config
-.\peppy_remote.cmd --server volumio
-.\peppy_remote.cmd --test
 .\peppy_remote.cmd --config-text
+.\peppy_remote.cmd --server volumio
+.\peppy_remote.cmd --profile "Living Room"
+.\peppy_remote.cmd --test
+.\peppy_remote.cmd --config --wizard-debug
 ```
 
 Or double-click **PeppyMeter Remote** (or **PeppyMeter Remote (Configure)**) on the Desktop or in Start Menu if shortcuts were created.
@@ -237,10 +239,14 @@ Or double-click **PeppyMeter Remote** (or **PeppyMeter Remote (Configure)**) on 
 After installation, run the client (on Linux use `~/peppy_remote/peppy_remote` or your install path if you used `--dir`; on Windows use `.\peppy_remote.cmd` from the install folder, e.g. `%USERPROFILE%\peppy_remote`):
 
 ```bash
-# Auto-discover server on network
+# Auto-discover server on network (uses active profile)
 ~/peppy_remote/peppy_remote
 
-# Connect to specific server
+# Start with a specific profile (by name or ID)
+~/peppy_remote/peppy_remote --profile "Living Room"
+~/peppy_remote/peppy_remote -p workshop
+
+# Connect to specific server (overrides profile)
 ~/peppy_remote/peppy_remote --server volumio
 ~/peppy_remote/peppy_remote --server 192.168.1.100
 
@@ -252,6 +258,9 @@ After installation, run the client (on Linux use `~/peppy_remote/peppy_remote` o
 
 # Configuration wizard in terminal (text) only
 ~/peppy_remote/peppy_remote --config-text
+
+# Debug the wizard itself (enables verbose logging before wizard starts)
+~/peppy_remote/peppy_remote --config --wizard-debug
 ```
 
 To exit the meter, press **ESC** or **Q**, or click/touch the screen.
@@ -266,7 +275,7 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config
 ```
 
-- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer). Steps: Welcome → Choose server (auto-discover, hostname, or IP) → Display mode → Template sources (SMB or local paths; **Mount now** to connect so the next step can list server themes — Linux: mount SMB; Windows: test UNC) → **Meter theme** (use server theme or fixed/kiosk: folder + fixed meter, random from folder, or random from list) → Spectrum decay → Logger/debug (level, trace_spectrum, trace_network, trace_config) → Save & Run or Save & Exit.
+- **With a display** (desktop): Opens a **GUI wizard** (requires `python3-tk`, installed by the installer).
 - **Without a display** (e.g. SSH): Falls back to the **terminal (text) wizard** in the same session.
 - **Terminal-only wizard:** Use `--config-text` to force the text-based wizard and skip the GUI:
 
@@ -274,21 +283,55 @@ Run the configuration wizard for easy setup:
 ~/peppy_remote/peppy_remote --config-text
 ```
 
-On first run, if you launch from a desktop shortcut, the GUI wizard opens automatically.
+On first run the wizard opens automatically and goes straight to creating a new profile.
 
-The wizard configures:
-- Server (auto-discover, enter hostname, or enter IP; after discovery you can choose "Use hostname" or "Use IP address" for the selected server)
-- Display mode (windowed, fullscreen)
-- Template sources (SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes in the next step)
-- **Meter theme**: Use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
-- Spectrum decay rate
-- Debug level and trace options
+### Multi-Profile Support
+
+The client supports multiple profiles, each with its own complete configuration (server, display, templates, spectrum, debug). This allows connecting to different Volumio servers or using different display setups from the same install.
+
+**Profile Manager (landing page):** When profiles exist, the wizard opens to a profile manager showing all profiles with the active profile marked. Actions available:
+- **New** — create a new profile (opens linear step wizard)
+- **Edit** — edit an existing profile (GUI: tabbed view; CLI: numbered menu)
+- **Set Active** — choose which profile starts by default
+- **Rename** — change a profile's friendly name
+- **Delete** — remove a profile (cannot delete the last one)
+- **Import** — load a profile from a JSON file (with collision handling)
+- **Export** — save a profile to a JSON file for backup or transfer
+- **Start** — launch the client with the selected profile
+
+**GUI Edit Mode:** When editing an existing profile, the GUI shows a **tabbed view** with 6 tabs (Server, Display, Templates, Theme, Spectrum, Debug) for direct access to any section. Save & Run and Save & Exit are always visible.
+
+**GUI New Profile:** When creating a new profile, the GUI uses a **linear step wizard** (Server → Display → Templates → Theme → Spectrum → Debug → Done).
+
+**CLI:** The terminal wizard shows the same profile manager with text commands (N/E/A/R/D/I/X/S/Q). Editing a profile shows a 17-item numbered menu.
+
+**Profile selection from command line:**
+```bash
+~/peppy_remote/peppy_remote --profile "Living Room"   # by name
+~/peppy_remote/peppy_remote -p workshop                # by ID
+```
+
+If no `--profile` is given, the client starts with the active profile (last used).
+
+Each profile configures:
+- **Server** — auto-discover, enter hostname, or enter IP; after discovery choose "Use hostname" or "Use IP address"
+- **Display** — windowed, fullscreen
+- **Templates** — SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes
+- **Meter theme** — use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
+- **Spectrum** — decay rate
+- **Debug** — level and trace options (spectrum, network, config, wizard)
 
 Settings are saved to `~/peppy_remote/config.json` and persist between runs.
 
+### Profile Export and Import
+
+Profiles can be exported to JSON files and imported on another machine (or the same machine after reinstall). The export file is human-readable and editable.
+
+On import, template paths are validated against the local filesystem. If a path does not exist (e.g. exported from Windows with `C:\Users\...` and imported on Linux), a warning is shown and the path is kept as-is for manual correction. Cross-platform transfers may require adjusting template paths in the profile editor or in the JSON file before import.
+
 ### Fixed theme (kiosk)
 
-To lock this client to a specific meter theme (e.g. one display always showing the same skin), set **Meter theme** in the wizard to something other than "Use server theme", or edit `config.json` and set both `display.meter_folder` (template folder name, e.g. `1920x720_5skins`) and `display.meter` (section name from that folder's `meters.txt`, or `"random"` for random from that folder, or a comma-separated list for random from that list). When both are set, the client ignores server theme changes and never reloads for theme updates. Leave both `null` to follow the server theme.
+To lock this client to a specific meter theme (e.g. one display always showing the same skin), set **Meter theme** in the profile editor to something other than "Use server theme". This sets `display.meter_folder` and `display.meter` within the profile. You can also edit `config.json` directly under the relevant profile's `display` section: set `meter_folder` (template folder name, e.g. `1920x720_5skins`) and `meter` (section name from that folder's `meters.txt`, or `"random"` for random from that folder, or a comma-separated list for random from that list). When both are set, the client ignores server theme changes and never reloads for theme updates. Leave both `null` to follow the server theme. Each profile has its own kiosk setting, so one profile can follow the server while another is locked to a fixed theme.
 
 ### Display Modes
 
@@ -298,7 +341,7 @@ To lock this client to a specific meter theme (e.g. one display always showing t
 | **Frameless** | No window decorations, fixed position | Kiosk displays, embedded |
 | **Fullscreen** | Full screen on selected monitor | Dedicated displays |
 
-**Windowed** and **Fullscreen** are set via the wizard or `--windowed` / `--fullscreen`. **Frameless** is set by editing `config.json`: set `display.windowed` to `false` and `display.fullscreen` to `false` and optionally set `display.position` to `[x, y]`.
+**Windowed** and **Fullscreen** are set via the wizard or `--windowed` / `--fullscreen`. **Frameless** is set by editing `config.json`: in the desired profile, set `display.windowed` to `false` and `display.fullscreen` to `false` and optionally set `display.position` to `[x, y]`.
 
 Command-line overrides:
 ```bash
@@ -308,49 +351,62 @@ Command-line overrides:
 
 ### Configuration File
 
-Settings are stored in `~/peppy_remote/config.json`:
+Settings are stored in `~/peppy_remote/config.json` using a multi-profile format (config version 2). Existing v1 configs are auto-migrated on first run:
 
 ```json
 {
-  "server": {
-    "host": null,
-    "level_port": 5580,
-    "spectrum_port": 5581,
-    "volumio_port": 3000,
-    "discovery_port": 5579,
-    "discovery_timeout": 10
-  },
-  "display": {
-    "windowed": true,
-    "position": null,
-    "fullscreen": false,
-    "monitor": 0,
-    "meter_folder": null,
-    "meter": null
-  },
-  "templates": {
-    "use_smb": true,
-    "local_path": null,
-    "spectrum_local_path": null
-  },
-  "spectrum": {
-    "decay_rate": 0.95
-  },
-  "debug": {
-    "level": "off",
-    "trace_spectrum": false,
-    "trace_network": false,
-    "trace_config": false
+  "config_version": 2,
+  "active_profile": "volumio",
+  "profiles": {
+    "volumio": {
+      "name": "Living Room",
+      "server": {
+        "host": "volumio",
+        "level_port": 5580,
+        "spectrum_port": 5581,
+        "volumio_port": 3000,
+        "discovery_port": 5579,
+        "discovery_timeout": 10
+      },
+      "display": {
+        "windowed": true,
+        "position": null,
+        "fullscreen": false,
+        "monitor": 0,
+        "meter_folder": null,
+        "meter": null
+      },
+      "templates": {
+        "use_smb": true,
+        "local_path": null,
+        "spectrum_local_path": null
+      },
+      "spectrum": {
+        "decay_rate": 0.95
+      },
+      "debug": {
+        "level": "off",
+        "trace_spectrum": false,
+        "trace_network": false,
+        "trace_config": false,
+        "trace_wizard": false
+      }
+    }
   }
 }
 ```
 
-**Note:** Persist countdown (duration and freeze/countdown mode) is supplied by the server in the config response; it is not stored in `config.json`.
+The `active_profile` key selects which profile is used when the client starts. Profile IDs are slugs derived from the server hostname (e.g. `volumio`, `192-168-30-36`). Each profile has a `name` field for display in the wizard.
+
+**Note:** Persist countdown (duration and freeze/countdown mode) is supplied by the server in the config response; it is not stored per-profile.
 
 ### Configuration Options
 
+These options exist within each profile in the `profiles` dict:
+
 | Section | Key | Default | Description |
 |---------|-----|---------|-------------|
+| (top) | name | (hostname) | Friendly display name for the profile |
 | server | host | null | Server hostname/IP (null = auto-discover) |
 | server | level_port | 5580 | UDP port for meter level data |
 | server | spectrum_port | 5581 | UDP port for spectrum FFT data |
@@ -371,8 +427,9 @@ Settings are stored in `~/peppy_remote/config.json`:
 | debug | trace_spectrum | false | Log per-packet spectrum data |
 | debug | trace_network | false | Log network connection details |
 | debug | trace_config | false | Log config fetch and theme/sync decisions |
+| debug | trace_wizard | false | Log wizard operations (profile management, import/export) |
 
-**CLI-only (not in `config.json`):** `--skip-version-check`, `--server-wait-timeout <seconds>` (default 120; minimum effective wait 5 s). Used during the HTTP version check phase before the meter starts.
+**CLI-only (not in `config.json`):** `--profile <name-or-id>` / `-p` (select profile), `--wizard-debug` (enable verbose wizard logging before wizard starts), `--skip-version-check`, `--server-wait-timeout <seconds>` (default 120; minimum effective wait 5 s).
 
 Command-line arguments override config file settings:
 
@@ -396,9 +453,16 @@ Command-line arguments override config file settings:
 # Spectrum tuning
 ~/peppy_remote/peppy_remote --decay-rate 0.97
 
+# Profile selection
+~/peppy_remote/peppy_remote --profile "Living Room"
+~/peppy_remote/peppy_remote -p workshop
+
 # Version / HTTP wait (defaults: wait up to 120s for Volumio HTTP before failing)
 ~/peppy_remote/peppy_remote --server-wait-timeout 180
 ~/peppy_remote/peppy_remote --skip-version-check   # not recommended for normal use
+
+# Wizard troubleshooting (enables verbose logging before wizard starts)
+~/peppy_remote/peppy_remote --config --wizard-debug
 ```
 
 ## Requirements
@@ -441,18 +505,29 @@ For server random-meter sync, discovery `active_meter` is treated as the runtime
 
 ## Installation Structure
 
-The installer downloads files from two repos. Client scripts, fonts, and icons come from [peppy_remote](https://github.com/foonerd/peppy_remote). Volumio handlers and format icons come from [peppy_screensaver](https://github.com/foonerd/peppy_screensaver). Both default to the `main` branch; use `--both`/`-Both` to set both to another branch, or `--remote-branch`/`--screensaver-branch` (`-RemoteBranch`/`-ScreensaverBranch` on Windows) to set each independently. See [Branch selection reference](#branch-selection-reference) for full details. PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
+The installer downloads files from two repos. Client entry point (`peppy_remote.py`), library modules (`lib/`), fonts, and icons come from [peppy_remote](https://github.com/foonerd/peppy_remote). Volumio handlers and format icons come from [peppy_screensaver](https://github.com/foonerd/peppy_screensaver). Both default to the `main` branch; use `--both`/`-Both` to set both to another branch, or `--remote-branch`/`--screensaver-branch` (`-RemoteBranch`/`-ScreensaverBranch` on Windows) to set each independently. See [Branch selection reference](#branch-selection-reference) for full details. PeppyMeter and PeppySpectrum are cloned from [foonerd/PeppyMeter](https://github.com/foonerd/PeppyMeter) and [foonerd/PeppySpectrum](https://github.com/foonerd/PeppySpectrum).
 
 After installation the directory looks like this (Linux; on Windows the launcher is `peppy_remote.cmd` / `peppy_remote.ps1` and the uninstall script is `uninstall.ps1`):
 
 ```
 ~/peppy_remote/
 ├── peppy_remote          # Launcher script (Linux; runs peppy_remote.py via venv)
-├── peppy_remote.py       # Main client
+├── peppy_remote.py       # Main client entry point
 ├── uninstall.sh          # Uninstall script (Linux)
 ├── peppy_remote.svg      # App icon (desktop launchers)
 ├── peppy_remote_config.svg
-├── config.json           # Client configuration
+├── config.json           # Client configuration (multi-profile, v2 format)
+├── lib/                  # Client modules (peppy_remote.py imports from here)
+│   ├── peppy_common.py   # Constants, config v2, logging, profile management
+│   ├── peppy_version.py  # Server version checking
+│   ├── peppy_network.py  # ServerDiscovery, ConfigVersionListener, ConfigFetcher
+│   ├── peppy_persist.py  # PersistManager (countdown state)
+│   ├── peppy_receivers.py # LevelReceiver, SpectrumReceiver, RemoteDataSource
+│   ├── peppy_spectrum.py # RemoteSpectrumOutput
+│   ├── peppy_smb.py      # SMBMount (Linux)
+│   ├── peppy_asset.py    # Format icons, fonts, handler patching
+│   ├── peppy_wizard_cli.py  # Terminal wizard with profile manager
+│   └── peppy_wizard_gui.py  # GUI wizard with tabbed editor
 ├── screensaver/          # Mirrors Volumio plugin structure
 │   ├── peppymeter/       # PeppyMeter base engine (git clone)
 │   │   ├── peppymeter.py
@@ -476,8 +551,7 @@ After installation the directory looks like this (Linux; on Windows the launcher
 │   ├── fonts/            # Bundled fonts for meter/theme text (see Fonts below)
 │   └── format-icons/     # Track type icons (SVG)
 ├── mnt/                  # SMB mount for templates (Linux)
-├── venv/                 # Python virtual environment
-└── config.json
+└── venv/                 # Python virtual environment
 ```
 
 ## Fonts
