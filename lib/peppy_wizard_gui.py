@@ -160,6 +160,8 @@ def _run_profile_editor(root, main_frame, store, result, profile_id=None):
         profile_name_var = tk.StringVar(value=config.get('name', ''))
 
     def _fill_servers_list(servers_dict):
+        if not lb.winfo_exists():
+            return
         lb.delete(0, tk.END)
         discovered.clear()
         for s in servers_dict.values():
@@ -376,6 +378,8 @@ def _run_profile_editor(root, main_frame, store, result, profile_id=None):
             root.after(0, lambda: _mount_done(ok, msg, path))
 
         def _mount_done(ok, msg, path=None):
+            if not btn_mount_now.winfo_exists():
+                return
             mount_status_var.set(msg)
             btn_mount_now.config(state=tk.NORMAL)
             wizard_smb_templates_path[0] = path if ok else None
