@@ -324,6 +324,140 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
 # =============================================================================
 # Full PeppyMeter Display (using volumio_peppymeter)
 
+def _create_peppymeter(label=""):
+    """Create PeppyMeter instance, parse Volumio config, init debug, log fonts.
+
+    Uses lazy imports - must be called after sys.path includes screensaver/ paths.
+
+    :param label: Tag for font log lines (e.g. 'sync', 'reload', or '' for initial)
+    :returns: (pm, meter_config_volumio)
+    """
+    from peppymeter.peppymeter import Peppymeter
+    from volumio_configfileparser import Volumio_ConfigFileParser
+    from volumio_peppymeter import init_debug_config
+
+    pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
+                    quit_pygame_on_stop=False)
+    parser = Volumio_ConfigFileParser(pm.util)
+    meter_config_volumio = parser.meter_config_volumio
+    init_debug_config(meter_config_volumio)
+
+    # Log effective font configuration (visible via remote's own debug)
+    tag = f" ({label})" if label else ""
+    _use_sys = meter_config_volumio.get('use.system.fonts', False)
+    _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
+    log_client(f"--- Font Mode{tag}: {_font_mode} ---", "basic")
+    log_client(f"  font.path = {meter_config_volumio.get('font.path', '')}", "basic")
+    log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
+    log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
+    log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
+
+    return pm, meter_config_volumio
+
+
+def _wire_peppymeter(pm, meter_config_volumio, remote_ds):
+    """Wire remote data source and create callback handler.
+
+    :param pm: Peppymeter instance
+    :param meter_config_volumio: Parsed Volumio meter config dict
+    :param remote_ds: RemoteDataSource instance
+    :returns: CallBack instance (fully wired to pm)
+    """
+    from volumio_peppymeter import CallBack
+
+    pm.data_source = remote_ds
+    if hasattr(pm, 'meter') and pm.meter:
+        pm.meter.data_source = remote_ds
+
+    callback = CallBack(pm.util, meter_config_volumio, pm.meter)
+    pm.meter.callback_start = callback.peppy_meter_start
+    pm.meter.callback_stop = callback.peppy_meter_stop
+    pm.dependent = callback.peppy_meter_update
+    pm.meter.malloc_trim = callback.trim_memory
+    pm.malloc_trim = callback.exit_trim_memory
+
+    return callback
+
+
+def _attach_display(pm, meter_config_volumio, screen, screen_w, screen_h, depth,
+                    is_windowed, is_fullscreen):
+    """Resize pygame display if template resolution changed, attach screen to pm.
+
+    :returns: (screen, screen_w, screen_h, depth)
+    """
+    import pygame as pg
+    from configfileparser import SCREEN_INFO, WIDTH, HEIGHT, DEPTH, SDL_ENV, DOUBLE_BUFFER, SCREEN_RECT
+    from volumio_configfileparser import COLOR_DEPTH
+
+    new_screen_w = pm.util.meter_config[SCREEN_INFO][WIDTH]
+    new_screen_h = pm.util.meter_config[SCREEN_INFO][HEIGHT]
+    new_depth = meter_config_volumio[COLOR_DEPTH]
+
+    if (new_screen_w, new_screen_h) != (screen_w, screen_h):
+        print(f"Display resizing: {screen_w}x{screen_h} -> {new_screen_w}x{new_screen_h}")
+        new_flags = 0
+        if is_fullscreen:
+            new_flags |= pg.FULLSCREEN
+        elif not is_windowed:
+            new_flags |= pg.NOFRAME
+        if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
+            new_flags |= pg.DOUBLEBUF
+        screen = pg.display.set_mode((new_screen_w, new_screen_h), new_flags, new_depth)
+        screen_w = new_screen_w
+        screen_h = new_screen_h
+        depth = new_depth
+        if is_windowed and not is_fullscreen:
+            pg.display.set_caption("PeppyMeter Remote")
+        print(f"Display resized to {screen_w}x{screen_h}")
+    else:
+        depth = new_depth
+
+    # Attach screen to PeppyMeter
+    pm.util.meter_config[SCREEN_INFO][WIDTH] = screen_w
+    pm.util.meter_config[SCREEN_INFO][HEIGHT] = screen_h
+    pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
+    pm.util.PYGAME_SCREEN = screen
+    pm.util.screen_copy = screen
+    pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
+
+    return screen, screen_w, screen_h, depth
+
+
+def _init_remote_spectrum(pm, meter_config_volumio, screensaver_path,
+                          spectrum_receiver, callback, client_config):
+    """Initialize remote spectrum if receiver is provided and spectrum is visible.
+
+    :returns: RemoteSpectrumOutput instance, or None
+    """
+    if not spectrum_receiver:
+        return None
+    try:
+        from volumio_configfileparser import SPECTRUM_VISIBLE
+        from configfileparser import METER
+        meter_name = pm.util.meter_config[METER]
+        meter_section = meter_config_volumio.get(meter_name, {})
+        spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
+        if not spectrum_visible:
+            return None
+        spectrum_config = (client_config or {}).get('spectrum', {})
+        decay_rate = spectrum_config.get('decay_rate', 0.95)
+        templates_config = (client_config or {}).get('templates', {})
+        spectrum_templates_path = templates_config.get('spectrum_local_path')
+        remote_spectrum = RemoteSpectrumOutput(
+            pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
+            decay_rate=decay_rate,
+            spectrum_templates_path=spectrum_templates_path
+        )
+        remote_spectrum.start()
+        callback.spectrum_output = remote_spectrum
+        return remote_spectrum
+    except Exception as e:
+        print(f"  Remote spectrum init failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def run_peppymeter_display(level_receiver, server_info, templates_path, config_fetcher, 
                            spectrum_receiver=None, client_config=None):
     """Run full PeppyMeter rendering using volumio_peppymeter code.
@@ -415,19 +549,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         print("Loading PeppyMeter...")
         
         # Import PeppyMeter components
-        # Note: peppymeter.peppymeter because Peppymeter class is in peppymeter/peppymeter.py
-        from peppymeter.peppymeter import Peppymeter
+        # Peppymeter, Volumio_ConfigFileParser, CallBack, init_debug_config are
+        # imported inside the helper functions (_create_peppymeter, _wire_peppymeter)
         from configfileparser import (
             SCREEN_INFO, WIDTH, HEIGHT, DEPTH, SDL_ENV, DOUBLE_BUFFER, SCREEN_RECT,
             METER, METER_FOLDER
         )
-        from volumio_configfileparser import Volumio_ConfigFileParser, COLOR_DEPTH
+        from volumio_configfileparser import COLOR_DEPTH
         
         # Import volumio_peppymeter functions (NOT init_display - we have our own for desktop)
-        from volumio_peppymeter import (
-            start_display_output, CallBack,
-            init_debug_config, log_debug, memory_limit
-        )
+        from volumio_peppymeter import start_display_output, log_debug, memory_limit
         
         # CRITICAL: Patch CurDir and PeppyPath in server modules for remote client compatibility
         # The server modules use CurDir (set to os.getcwd() at import time) to construct
@@ -442,27 +573,10 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         volumio_peppymeter.PeppyPath = os.path.join(SCRIPT_DIR, 'screensaver', 'peppymeter')
         volumio_spectrum.CurDir = SCRIPT_DIR
         
-        # Initialize base PeppyMeter
+        # Initialize PeppyMeter, parse Volumio config, init debug
         print("Initializing PeppyMeter...")
-        pm = Peppymeter(standalone=True, timer_controlled_random_meter=False, 
-                       quit_pygame_on_stop=False)
-        
-        # Parse Volumio configuration
-        parser = Volumio_ConfigFileParser(pm.util)
-        meter_config_volumio = parser.meter_config_volumio
-        
-        # Initialize debug settings
-        init_debug_config(meter_config_volumio)
+        pm, meter_config_volumio = _create_peppymeter()
         log_debug("=== PeppyMeter Remote Client starting ===", "basic")
-        
-        # Log effective font configuration (visible via remote's own debug)
-        _use_sys = meter_config_volumio.get('use.system.fonts', False)
-        _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
-        log_client(f"--- Font Mode: {_font_mode} ---", "basic")
-        log_client(f"  font.path = {meter_config_volumio.get('font.path', '')}", "basic")
-        log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
-        log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
-        log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
 
         # UDP listeners and registration before RemoteDataSource (supports multiple clients on one host)
         current_version_holder = {
@@ -503,19 +617,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 except Exception:
                     pass
         
-        # Inject remote data source into both Peppymeter AND Meter
-        # PeppyMeter's meter.run() uses self.data_source internally
-        pm.data_source = remote_ds
-        if hasattr(pm, 'meter') and pm.meter:
-            pm.meter.data_source = remote_ds
-        
-        # Create callback handler
-        callback = CallBack(pm.util, meter_config_volumio, pm.meter)
-        pm.meter.callback_start = callback.peppy_meter_start
-        pm.meter.callback_stop = callback.peppy_meter_stop
-        pm.dependent = callback.peppy_meter_update
-        pm.meter.malloc_trim = callback.trim_memory
-        pm.malloc_trim = callback.exit_trim_memory
+        # Wire remote data source and create callback handler
+        callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
         
         # Create persist manager for countdown display (mirrors server's Node.js persist file handling)
         persist_manager = PersistManager(
@@ -617,81 +720,21 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             current_version_holder['active_meter'] = _norm_str(new_chosen_meter)
             current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
             current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
-            pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
-                           quit_pygame_on_stop=False)
-            parser = Volumio_ConfigFileParser(pm.util)
-            meter_config_volumio = parser.meter_config_volumio
-            init_debug_config(meter_config_volumio)
-            _use_sys = meter_config_volumio.get('use.system.fonts', False)
-            _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
-            log_client(f"--- Font Mode (sync): {_font_mode} ---", "basic")
-            log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
-            log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
-            log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
-            pm.data_source = remote_ds
-            if hasattr(pm, 'meter') and pm.meter:
-                pm.meter.data_source = remote_ds
-            callback = CallBack(pm.util, meter_config_volumio, pm.meter)
-            pm.meter.callback_start = callback.peppy_meter_start
-            pm.meter.callback_stop = callback.peppy_meter_stop
-            pm.dependent = callback.peppy_meter_update
-            pm.meter.malloc_trim = callback.trim_memory
-            pm.malloc_trim = callback.exit_trim_memory
+            pm, meter_config_volumio = _create_peppymeter(label="sync")
+            callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
             callback.persist_manager = persist_manager
-            new_screen_w = pm.util.meter_config[SCREEN_INFO][WIDTH]
-            new_screen_h = pm.util.meter_config[SCREEN_INFO][HEIGHT]
-            if (new_screen_w, new_screen_h) != (screen_w, screen_h):
-                new_flags = 0
-                if is_fullscreen:
-                    new_flags |= pg.FULLSCREEN
-                elif not is_windowed:
-                    new_flags |= pg.NOFRAME
-                if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
-                    new_flags |= pg.DOUBLEBUF
-                screen = pg.display.set_mode((new_screen_w, new_screen_h), new_flags, depth)
-                screen_w, screen_h = new_screen_w, new_screen_h
-            pm.util.meter_config[SCREEN_INFO][WIDTH] = screen_w
-            pm.util.meter_config[SCREEN_INFO][HEIGHT] = screen_h
-            pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
-            pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
-            pm.util.PYGAME_SCREEN = screen
-            pm.util.screen_copy = screen
+            screen, screen_w, screen_h, depth = _attach_display(
+                pm, meter_config_volumio, screen, screen_w, screen_h, depth,
+                is_windowed, is_fullscreen
+            )
             version_listener.reload_requested = False
             version_listener.new_active_meter = None
         
         # Initialize remote spectrum if receiver is provided and spectrum is enabled
-        remote_spectrum = None
-        if spectrum_receiver:
-            try:
-                from volumio_configfileparser import SPECTRUM_VISIBLE
-                from configfileparser import METER
-                meter_name = pm.util.meter_config[METER]
-                meter_section = meter_config_volumio.get(meter_name, {})
-                spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
-                
-                if spectrum_visible:
-                    print("Initializing remote spectrum...")
-                    # Get spectrum settings from client config
-                    spectrum_config = client_config.get('spectrum', {})
-                    decay_rate = spectrum_config.get('decay_rate', 0.95)
-                    templates_config = client_config.get('templates', {})
-                    spectrum_templates_path = templates_config.get('spectrum_local_path')
-                    
-                    remote_spectrum = RemoteSpectrumOutput(
-                        pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
-                        decay_rate=decay_rate,
-                        spectrum_templates_path=spectrum_templates_path
-                    )
-                    remote_spectrum.start()
-                    # Inject into callback so it's used instead of local SpectrumOutput
-                    callback.spectrum_output = remote_spectrum
-                    print("  Remote spectrum initialized")
-                else:
-                    print("  Spectrum not visible in current meter config")
-            except Exception as e:
-                print(f"  Remote spectrum initialization failed: {e}")
-                import traceback
-                traceback.print_exc()
+        remote_spectrum = _init_remote_spectrum(
+            pm, meter_config_volumio, screensaver_path, spectrum_receiver,
+            callback, client_config
+        )
         
         mode_str = "fullscreen" if is_fullscreen else ("windowed" if is_windowed else "frameless")
         print(f"Starting meter display ({mode_str})...")
@@ -838,26 +881,8 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 current_version_holder['active_meter'] = _norm_str(new_chosen_meter)
                 current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
                 current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
-                pm = Peppymeter(standalone=True, timer_controlled_random_meter=False,
-                               quit_pygame_on_stop=False)
-                parser = Volumio_ConfigFileParser(pm.util)
-                meter_config_volumio = parser.meter_config_volumio
-                init_debug_config(meter_config_volumio)
-                _use_sys = meter_config_volumio.get('use.system.fonts', False)
-                _font_mode = "system fonts (Lato)" if _use_sys else "PeppyFont (universal)"
-                log_client(f"--- Font Mode (reload): {_font_mode} ---", "basic")
-                log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
-                log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
-                log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
-                pm.data_source = remote_ds
-                if hasattr(pm, 'meter') and pm.meter:
-                    pm.meter.data_source = remote_ds
-                callback = CallBack(pm.util, meter_config_volumio, pm.meter)
-                pm.meter.callback_start = callback.peppy_meter_start
-                pm.meter.callback_stop = callback.peppy_meter_stop
-                pm.dependent = callback.peppy_meter_update
-                pm.meter.malloc_trim = callback.trim_memory
-                pm.malloc_trim = callback.exit_trim_memory
+                pm, meter_config_volumio = _create_peppymeter(label="reload")
+                callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
                 
                 # Update persist manager with potentially changed settings from server
                 persist_manager.update_settings(
@@ -871,66 +896,17 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     remote_spectrum.stop_thread()
                     remote_spectrum = None
                 
-                # Use new config dimensions; recreate window if resolution changed
-                new_screen_w = pm.util.meter_config[SCREEN_INFO][WIDTH]
-                new_screen_h = pm.util.meter_config[SCREEN_INFO][HEIGHT]
-                new_depth = meter_config_volumio[COLOR_DEPTH]
-                
-                if (new_screen_w, new_screen_h) != (screen_w, screen_h):
-                    print(f"Display resizing: {screen_w}x{screen_h} -> {new_screen_w}x{new_screen_h}")
-                    # Recompute display flags for new window
-                    new_flags = 0
-                    if is_fullscreen:
-                        new_flags |= pg.FULLSCREEN
-                    elif not is_windowed:
-                        new_flags |= pg.NOFRAME
-                    if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
-                        new_flags |= pg.DOUBLEBUF
-                    
-                    screen = pg.display.set_mode((new_screen_w, new_screen_h), new_flags, new_depth)
-                    screen_w = new_screen_w
-                    screen_h = new_screen_h
-                    depth = new_depth
-                    
-                    if is_windowed and not is_fullscreen:
-                        pg.display.set_caption("PeppyMeter Remote")
-                    print(f"Display resized to {screen_w}x{screen_h}")
-                else:
-                    # Update depth even if size unchanged
-                    depth = new_depth
-                
-                # Attach current window to the new pm BEFORE spectrum init
-                pm.util.meter_config[SCREEN_INFO][WIDTH] = screen_w
-                pm.util.meter_config[SCREEN_INFO][HEIGHT] = screen_h
-                pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
-                pm.util.PYGAME_SCREEN = screen
-                pm.util.screen_copy = screen
-                pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
+                # Resize display if resolution changed, attach screen to pm
+                screen, screen_w, screen_h, depth = _attach_display(
+                    pm, meter_config_volumio, screen, screen_w, screen_h, depth,
+                    is_windowed, is_fullscreen
+                )
                 
                 # Re-initialize remote spectrum AFTER screen is attached
-                if spectrum_receiver:
-                    try:
-                        from volumio_configfileparser import SPECTRUM_VISIBLE
-                        from configfileparser import METER
-                        meter_name = pm.util.meter_config[METER]
-                        meter_section = meter_config_volumio.get(meter_name, {})
-                        spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
-                        if spectrum_visible:
-                            # Get spectrum settings from client config
-                            spectrum_config = client_config.get('spectrum', {})
-                            decay_rate = spectrum_config.get('decay_rate', 0.95)
-                            templates_config = client_config.get('templates', {})
-                            spectrum_templates_path = templates_config.get('spectrum_local_path')
-                            
-                            remote_spectrum = RemoteSpectrumOutput(
-                                pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
-                                decay_rate=decay_rate,
-                                spectrum_templates_path=spectrum_templates_path
-                            )
-                            remote_spectrum.start()
-                            callback.spectrum_output = remote_spectrum
-                    except Exception as e:
-                        print(f"  Remote spectrum reload failed: {e}")
+                remote_spectrum = _init_remote_spectrum(
+                    pm, meter_config_volumio, screensaver_path, spectrum_receiver,
+                    callback, client_config
+                )
                 
                 print("Config reloaded from server.")
         finally:
