@@ -5,6 +5,7 @@ PeppyMeter Remote Client - Audio data receivers.
 UDP receivers for audio level and spectrum data from the PeppyMeter server.
 """
 
+import json
 import socket
 import struct
 import threading
