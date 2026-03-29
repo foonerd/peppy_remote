@@ -304,6 +304,12 @@ def setup_remote_config(peppymeter_path, templates_path, config_fetcher, active_
     # Keep smooth buffer for smoother needle movement
     config['data.source']['smooth.buffer.size'] = '4'
     
+    # Disable remote server in client config - the server's config.txt has
+    # remote.server.enabled = True (because remote display is enabled on the
+    # server). If we leave this in, start_display_output() will start its own
+    # DiscoveryAnnouncer and broadcast this client as a server on UDP 5579.
+    config['current']['remote.server.enabled'] = 'False'
+
     # Write adjusted config - ensure meter is always set
     final_meter = config['current'].get('meter', '')
     if not final_meter:
