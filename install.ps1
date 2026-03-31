@@ -8,7 +8,14 @@
 #   irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
 #   .\install.ps1 -Server volumio
 #   .\install.ps1 -Dir C:\peppy_remote
-#   .\install.ps1 -b experimental   # peppy_screensaver branch (default: main)
+#   .\install.ps1 -b experimental            # both repos from experimental
+#   .\install.ps1 -Both experimental          # same as -b (preferred)
+#   .\install.ps1 -RemoteBranch experimental  # peppy_remote only
+#   .\install.ps1 -ScreensaverBranch experimental  # peppy_screensaver only
+#
+# If using experimental branch, download the installer from that branch too:
+#   irm https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.ps1 -OutFile install.ps1
+#   powershell -ExecutionPolicy Bypass -File install.ps1 -b experimental
 #
 # If the one-liner fails (e.g. after winget installs Python/Git), download
 # install.ps1 from the repo and run: powershell -ExecutionPolicy Bypass -File install.ps1
@@ -19,7 +26,9 @@
 param(
     [string]$Server = "",
     [string]$Dir = "",
-    [Alias('b')][string]$ScreensaverBranch = "main"
+    [Alias('b')][string]$Both = "",
+    [string]$RemoteBranch = "",
+    [string]$ScreensaverBranch = ""
 )
 
 # Require TLS 1.2 for GitHub/HTTPS on Windows 10 (default .NET protocol can fail)
@@ -31,8 +40,28 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $ErrorActionPreference = "Stop"
 
-$RepoUrl = "https://github.com/foonerd/peppy_remote"
+# =============================================================================
+# Branch resolution
+# =============================================================================
+if ($Both -and ($RemoteBranch -or $ScreensaverBranch)) {
+    Write-Host "ERROR: -Both/-b cannot be combined with -RemoteBranch or -ScreensaverBranch" -ForegroundColor Red
+    Write-Host "Use -Both/-b to set both repos to the same branch,"
+    Write-Host "or -RemoteBranch and -ScreensaverBranch individually."
+    exit 1
+}
+
 $RepoBranch = "main"
+$ScreensaverRepoBranch = "main"
+
+if ($Both) {
+    $RepoBranch = $Both
+    $ScreensaverRepoBranch = $Both
+} else {
+    if ($RemoteBranch) { $RepoBranch = $RemoteBranch }
+    if ($ScreensaverBranch) { $ScreensaverRepoBranch = $ScreensaverBranch }
+}
+
+$RepoUrl = "https://github.com/foonerd/peppy_remote"
 $ScreensaverRepoUrl = "https://github.com/foonerd/peppy_screensaver"
 $PeppymeterRepo = "https://github.com/foonerd/PeppyMeter"
 $SpectrumRepo = "https://github.com/foonerd/PeppySpectrum"
@@ -168,17 +197,29 @@ if ($args -contains "-Help" -or $args -contains "-h") {
     Write-Host ""
     Write-Host "Usage:"
     Write-Host "  irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 | iex"
-    Write-Host "  irm ... | iex -ArgumentList '-Server','volumio'"
-    Write-Host "  irm ... | iex -ArgumentList '-Dir','C:\peppy_remote'"
     Write-Host ""
     Write-Host "If the one-liner fails (e.g. after winget installs Python/Git), download install.ps1"
     Write-Host "from the repo and run:  powershell -ExecutionPolicy Bypass -File install.ps1"
     Write-Host ""
     Write-Host "Parameters:"
-    Write-Host "  -Server <host>   Pre-configure server hostname/IP"
-    Write-Host "  -Dir <path>      Install directory (default: ~\peppy_remote)"
-    Write-Host "  -b <branch>      Peppy screensaver branch (default: main)"
-    Write-Host "  -Help, -h        Show this help"
+    Write-Host "  -Server <host>                    Pre-configure server hostname/IP"
+    Write-Host "  -Dir <path>                       Install directory (default: ~\peppy_remote)"
+    Write-Host ""
+    Write-Host "Branch selection (default: both repos use main):"
+    Write-Host "  -Both, -b <branch>                Set both repos to the same branch"
+    Write-Host "  -RemoteBranch <branch>            peppy_remote repo branch only"
+    Write-Host "  -ScreensaverBranch <branch>       peppy_screensaver repo branch only"
+    Write-Host ""
+    Write-Host "  -Both/-b cannot be combined with -RemoteBranch or -ScreensaverBranch."
+    Write-Host "  -RemoteBranch and -ScreensaverBranch can be used together."
+    Write-Host ""
+    Write-Host "Examples:"
+    Write-Host "  .\install.ps1                                      # both repos from main"
+    Write-Host "  .\install.ps1 -b experimental                      # both repos from experimental"
+    Write-Host "  .\install.ps1 -RemoteBranch experimental           # remote only from experimental"
+    Write-Host "  .\install.ps1 -ScreensaverBranch experimental      # screensaver only from experimental"
+    Write-Host ""
+    Write-Host "  -Help, -h                         Show this help"
     exit 0
 }
 
@@ -193,7 +234,8 @@ trap {
 Write-Banner "PeppyMeter Remote Client Installer"
 Write-Host "Install directory: $InstallDir"
 if ($Server) { Write-Host "Server: $Server" }
-if ($ScreensaverBranch -ne "main") { Write-Host "Screensaver branch: $ScreensaverBranch" }
+Write-Host "Remote files:  $RepoBranch (peppy_remote)"
+Write-Host "Handler files: $ScreensaverRepoBranch (peppy_screensaver)"
 Write-Host ""
 
 # --- Existing install ---
@@ -285,6 +327,7 @@ if ($missing.Count -gt 0) {
         Write-Host ""
         Write-Host "Dependencies were installed but are not visible in this session."
         Write-Host "Re-launching installer in a new window (updated PATH)..."
+        # Download installer from the correct peppy_remote branch
         $scriptUrl = "$RepoUrl/raw/$RepoBranch/install.ps1"
         $tempScript = Join-Path $env:TEMP "peppy_remote_install.ps1"
         try {
@@ -292,6 +335,10 @@ if ($missing.Count -gt 0) {
             $launchArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tempScript)
             if ($Server) { $launchArgs += "-Server"; $launchArgs += $Server }
             if ($Dir)    { $launchArgs += "-Dir";    $launchArgs += $Dir }
+            # Pass through branch arguments so the relaunched script uses the same branches
+            if ($Both) { $launchArgs += "-Both"; $launchArgs += $Both }
+            if ($RemoteBranch) { $launchArgs += "-RemoteBranch"; $launchArgs += $RemoteBranch }
+            if ($ScreensaverBranch) { $launchArgs += "-ScreensaverBranch"; $launchArgs += $ScreensaverBranch }
             # Set guard so the child process will not relaunch again
             $env:PEPPY_INSTALL_RELAUNCHED = "1"
             Start-Process powershell -ArgumentList $launchArgs -Wait
@@ -325,7 +372,26 @@ Download-File "$base/peppy_remote.py" (Join-Path $InstallDir "peppy_remote.py")
 Download-File "$base/uninstall.ps1" (Join-Path $InstallDir "uninstall.ps1")
 Download-File "$base/peppy_remote.svg" (Join-Path $InstallDir "peppy_remote.svg")
 Download-File "$base/peppy_remote_config.svg" (Join-Path $InstallDir "peppy_remote_config.svg")
-Write-Host "  Downloaded: peppy_remote.py, uninstall.ps1, icons"
+
+# Download lib/ modules (modular peppy_remote components)
+$libDir = Join-Path $InstallDir "lib"
+New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+$libModules = @(
+    "peppy_common.py",
+    "peppy_version.py",
+    "peppy_network.py",
+    "peppy_persist.py",
+    "peppy_receivers.py",
+    "peppy_spectrum.py",
+    "peppy_smb.py",
+    "peppy_asset.py",
+    "peppy_wizard_cli.py",
+    "peppy_wizard_gui.py"
+)
+foreach ($mod in $libModules) {
+    Download-File "$base/lib/$mod" (Join-Path $libDir $mod)
+}
+Write-Host "  Downloaded: peppy_remote.py, uninstall.ps1, icons, lib/ ($($libModules.Count) modules)"
 
 # --- Clone PeppyMeter ---
 Write-Host ""
@@ -349,7 +415,7 @@ if (Test-Path $specDir) {
 # --- Download Volumio handlers ---
 Write-Host ""
 Write-Host "Downloading Volumio handlers..."
-$volBase = "$ScreensaverRepoUrl/raw/$ScreensaverBranch/volumio_peppymeter"
+$volBase = "$ScreensaverRepoUrl/raw/$ScreensaverRepoBranch/volumio_peppymeter"
 foreach ($f in $VolumioFiles) {
     Download-File "$volBase/$f" (Join-Path $InstallDir "screensaver\$f")
 }
@@ -527,7 +593,7 @@ $launcherPs1 = @"
 `$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
 $cairoPathLinePs1
 `$env:PYTHONUTF8 = "1"
-`$env:PYTHONPATH = "`$ScriptDir\screensaver;`$ScriptDir\screensaver\peppymeter;`$ScriptDir\screensaver\spectrum"
+`$env:PYTHONPATH = "`$ScriptDir\lib;`$ScriptDir\screensaver;`$ScriptDir\screensaver\peppymeter;`$ScriptDir\screensaver\spectrum"
 & "`$ScriptDir\venv\Scripts\python.exe" "`$ScriptDir\peppy_remote.py" @args
 "@
 Set-Content (Join-Path $InstallDir "peppy_remote.ps1") -Value $launcherPs1
@@ -537,7 +603,7 @@ $launcherCmd = @"
 set SCRIPT_DIR=%~dp0
 $cairoPathLineCmd
 set PYTHONUTF8=1
-set PYTHONPATH=%SCRIPT_DIR%screensaver;%SCRIPT_DIR%screensaver\peppymeter;%SCRIPT_DIR%screensaver\spectrum
+set PYTHONPATH=%SCRIPT_DIR%lib;%SCRIPT_DIR%screensaver;%SCRIPT_DIR%screensaver\peppymeter;%SCRIPT_DIR%screensaver\spectrum
 "%SCRIPT_DIR%venv\Scripts\python.exe" "%SCRIPT_DIR%peppy_remote.py" %*
 "@
 Set-Content (Join-Path $InstallDir "peppy_remote.cmd") -Value $launcherCmd
