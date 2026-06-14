@@ -6,6 +6,8 @@ Format icon fetching, font downloading, handler patching,
 and UNC path resolution for remote client compatibility.
 """
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -234,3 +236,143 @@ def _patch_handlers_for_local_icons(screensaver_path):
             print(f"  Warning: Failed to patch {handler_file}: {e}")
     
     return patched_count
+
+
+# =============================================================================
+# Handler sync (keep handlers byte-identical to the connected server)
+# =============================================================================
+# The plugin exposes a server-authoritative manifest of the exact handler (.py) and
+# font files it runs. On connect we diff that manifest by sha256 and pull only the
+# files that differ, so the remote always runs the same handler code as its server -
+# no dependency on which GitHub branch the client was installed from, and adding a
+# handler module to the plugin never again needs an installer file-list edit.
+# Safe by construction: integrity-checked (sha256), atomic per-file writes, and a
+# silent no-op against older servers that lack the endpoint (keeps bundled files).
+
+def _peppy_safe_name(name):
+    """Reject anything that could escape the target directory."""
+    return bool(name) and '/' not in name and '\\' not in name and '..' not in name
+
+
+def _peppy_post_json(url, payload, timeout=10):
+    body = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(
+        url, data=body, method='POST',
+        headers={'Content-Type': 'application/json', 'User-Agent': 'PeppyRemote/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode('utf-8', errors='replace'))
+
+
+def _peppy_sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _sync_one_file(base_url, kind, item, dest_dir):
+    """Download one manifest entry into dest_dir if its sha256 differs from local.
+
+    Returns True if a file was written, False otherwise.
+    """
+    name = item.get('name')
+    want = (item.get('sha256') or '').lower()
+    if not _peppy_safe_name(name):
+        return False
+    dest = os.path.join(dest_dir, name)
+
+    # Already current?
+    if want and os.path.exists(dest):
+        try:
+            if _peppy_sha256_file(dest).lower() == want:
+                return False
+        except Exception:
+            pass
+
+    try:
+        resp = _peppy_post_json(
+            base_url,
+            {'endpoint': 'peppy_screensaver_file', 'data': {'kind': kind, 'name': name}},
+            timeout=15,
+        )
+    except Exception as e:
+        log_client(f"Handler sync: fetch {name} failed ({e})", "verbose")
+        return False
+
+    inner = (resp or {}).get('data') or {}
+    if not inner.get('success') or not inner.get('data'):
+        log_client(f"Handler sync: server did not return {name}", "verbose")
+        return False
+
+    try:
+        raw = base64.b64decode(inner['data'])
+    except Exception:
+        log_client(f"Handler sync: bad base64 for {name}", "verbose")
+        return False
+
+    got = hashlib.sha256(raw).hexdigest().lower()
+    if want and got != want:
+        log_client(f"Handler sync: sha256 mismatch for {name}; keeping existing file", "basic")
+        return False
+
+    tmp = dest + '.peppytmp'
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        with open(tmp, 'wb') as f:
+            f.write(raw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, dest)
+        log_client(f"Handler sync: updated {name}", "verbose")
+        return True
+    except Exception as e:
+        log_client(f"Handler sync: write {name} failed ({e})", "verbose")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
+def sync_handlers_from_server(screensaver_path, server_ip, volumio_port=3000):
+    """Pull the handler (.py) + font set the connected server actually runs.
+
+    Must run BEFORE the handlers are imported (and before setup_format_icons, so the
+    local-icon patch is applied to the freshly synced files). No-ops silently if the
+    server is older and has no manifest endpoint.
+    """
+    base_url = f"http://{server_ip}:{volumio_port}/api/v1/pluginEndpoint"
+    try:
+        resp = _peppy_post_json(base_url, {'endpoint': 'peppy_screensaver_manifest'}, timeout=10)
+    except Exception as e:
+        log_client(f"Handler sync: manifest unavailable ({e}); using bundled handlers", "verbose")
+        return
+
+    data = (resp or {}).get('data') or {}
+    if not data.get('success'):
+        log_client("Handler sync: server has no manifest endpoint; using bundled handlers", "basic")
+        return
+
+    handlers = data.get('handlers') or []
+    fonts = data.get('fonts') or []
+    log_client(
+        f"Handler sync: server plugin {data.get('plugin_version')!r}, "
+        f"{len(handlers)} handler(s), {len(fonts)} font(s)", "basic"
+    )
+
+    updated = 0
+    for item in handlers:
+        if _sync_one_file(base_url, 'handler', item, screensaver_path):
+            updated += 1
+    fonts_dir = os.path.join(screensaver_path, 'fonts')
+    for item in fonts:
+        if _sync_one_file(base_url, 'font', item, fonts_dir):
+            updated += 1
+
+    if updated:
+        log_client(f"Handler sync: updated {updated} file(s) from server", "basic")
+    else:
+        log_client("Handler sync: all files already current", "basic")
