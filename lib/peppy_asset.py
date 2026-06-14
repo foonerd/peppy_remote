@@ -6,6 +6,7 @@ Format icon fetching, font downloading, handler patching,
 and UNC path resolution for remote client compatibility.
 """
 
+import json
 import os
 import re
 import urllib.request

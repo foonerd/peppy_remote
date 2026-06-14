@@ -4,7 +4,7 @@ Remote display client for the [PeppyMeter Screensaver](https://github.com/fooner
 
 This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server's first announcement before starting the meter (syncing screen). By default it syncs to the server's theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
 
-**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
+**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, folder image layer and artist fanart slideshow (resolved by the server, including fade/merge transitions), playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
 
 **Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.3.2). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
 
@@ -547,6 +547,8 @@ After installation the directory looks like this (Linux; on Windows the launcher
 │   ├── volumio_indicators.py   # Volume/mute/shuffle icons
 │   ├── volumio_spectrum.py     # Spectrum integration
 │   ├── volumio_basic.py        # Basic display handler
+│   ├── volumio_folderimage.py  # Folder image layer (back/logo art)
+│   ├── volumio_artistfanart.py # Artist fanart slideshow
 │   ├── screensaverspectrum.py
 │   ├── fonts/            # Bundled fonts for meter/theme text (see Fonts below)
 │   └── format-icons/     # Track type icons (SVG)
