@@ -294,6 +294,7 @@ VOLUMIO_FILES=(
     "volumio_indicators.py"
     "volumio_spectrum.py"
     "volumio_basic.py"
+    "volumio_folderimage.py"
     "screensaverspectrum.py"
 )
 
