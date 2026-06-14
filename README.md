@@ -556,7 +556,7 @@ After installation the directory looks like this (Linux; on Windows the launcher
 
 ## Fonts
 
-The installer downloads a full set of fonts to `screensaver/fonts/` so the meter and themes render correctly without relying on the server or system fonts. Bundled families include **DSEG7** (LCD-style digits), **Lato**, **Gibson**, **Font Awesome**, **Material Icons**, **Material Design Icons**, and **Glyphicons Halflings**. Themes and handlers reference these from the screensaver path.
+The installer downloads a full set of fonts to `screensaver/fonts/` so the meter and themes render correctly without relying on the server or system fonts. The primary meter text font is **PeppyFont** (`Light`, `Regular`, `Bold`, and `Italic`), a multi-script face with broad language coverage; the `Italic` face provides real italics for Latin/Cyrillic/Greek and upright fallback for scripts without italics. Additional bundled families include **DSEG7** (LCD-style digits), **Lato**, **Gibson**, **Font Awesome**, **Material Icons**, **Material Design Icons**, and **Glyphicons Halflings**. Themes and handlers reference these from the screensaver path.
 
 ## Format Icons
 
