@@ -119,7 +119,7 @@ def _fetch_format_icon(fmt, icons_dir, server_ip, volumio_port):
 # Fonts required by handlers (font.path + light/regular/bold; digi hardcoded as DSEG7Classic-Italic.ttf)
 KNOWN_PEPPY_FONTS = [
     'Lato-Light.ttf', 'Lato-Regular.ttf', 'Lato-Bold.ttf',
-    'PeppyFont-Light.ttf', 'PeppyFont-Regular.ttf', 'PeppyFont-Bold.ttf',
+    'PeppyFont-Light.ttf', 'PeppyFont-Regular.ttf', 'PeppyFont-Bold.ttf', 'PeppyFont-Italic.ttf',
     'DSEG7Classic-Italic.ttf',
 ]
 

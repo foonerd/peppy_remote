@@ -89,7 +89,7 @@ $Fonts = @(
     "Lato-Regular.eot", "Lato-Regular.ttf", "Lato-Regular.woff", "Lato-Regular.woff2",
     "materialdesignicons-webfont.eot", "materialdesignicons-webfont.ttf", "materialdesignicons-webfont.woff", "materialdesignicons-webfont.woff2",
     "MaterialIcons-Regular.eot", "MaterialIcons-Regular.ttf", "MaterialIcons-Regular.woff", "MaterialIcons-Regular.woff2",
-    "PeppyFont-Light.ttf", "PeppyFont-Regular.ttf", "PeppyFont-Bold.ttf"
+    "PeppyFont-Light.ttf", "PeppyFont-Regular.ttf", "PeppyFont-Bold.ttf", "PeppyFont-Italic.ttf"
 )
 
 $FormatIcons = @(
