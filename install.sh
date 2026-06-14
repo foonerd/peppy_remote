@@ -110,6 +110,24 @@ if [ -n "$BOTH_BRANCH" ]; then
 fi
 
 # =============================================================================
+# Download helper: fail clearly on HTTP errors (e.g. a file missing on the
+# selected branch) instead of silently writing a "404: Not Found" page to disk.
+# =============================================================================
+dl() {
+    local url="$1" out="$2"
+    if ! curl -fsSL "$url" -o "$out"; then
+        echo ""
+        echo "ERROR: Could not download (file missing or HTTP error):"
+        echo "  $url"
+        echo "This usually means the selected branch does not contain this file."
+        echo "Branches in use: peppy_remote='$REPO_BRANCH', peppy_screensaver='$SCREENSAVER_REPO_BRANCH'."
+        echo "For the experimental build, use the experimental installer AND -b experimental:"
+        echo "  curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.sh | bash -s -- -b experimental"
+        exit 1
+    fi
+}
+
+# =============================================================================
 # Banner
 # =============================================================================
 echo ""
@@ -201,11 +219,11 @@ echo ""
 echo "Downloading client scripts..."
 
 # Download main client script (from peppy_remote repo root)
-curl -sSL "$REPO_URL/raw/$REPO_BRANCH/peppy_remote.py" -o "$INSTALL_DIR/peppy_remote.py"
+dl "$REPO_URL/raw/$REPO_BRANCH/peppy_remote.py" "$INSTALL_DIR/peppy_remote.py"
 chmod +x "$INSTALL_DIR/peppy_remote.py"
 
 # Download uninstall script
-curl -sSL "$REPO_URL/raw/$REPO_BRANCH/uninstall.sh" -o "$INSTALL_DIR/uninstall.sh"
+dl "$REPO_URL/raw/$REPO_BRANCH/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Download icons
@@ -227,7 +245,7 @@ LIB_MODULES=(
     "peppy_wizard_gui.py"
 )
 for mod in "${LIB_MODULES[@]}"; do
-    curl -sSL "$REPO_URL/raw/$REPO_BRANCH/lib/$mod" -o "$INSTALL_DIR/lib/$mod"
+    dl "$REPO_URL/raw/$REPO_BRANCH/lib/$mod" "$INSTALL_DIR/lib/$mod"
 done
 
 echo "  Downloaded: peppy_remote.py"
@@ -302,7 +320,7 @@ VOLUMIO_FILES=(
 # Download Volumio handlers from peppy_screensaver repo (until migrated)
 for file in "${VOLUMIO_FILES[@]}"; do
     echo "  Downloading: $file"
-    curl -sSL "$SCREENSAVER_REPO_URL/raw/$SCREENSAVER_REPO_BRANCH/volumio_peppymeter/$file" -o "$INSTALL_DIR/screensaver/$file"
+    dl "$SCREENSAVER_REPO_URL/raw/$SCREENSAVER_REPO_BRANCH/volumio_peppymeter/$file" "$INSTALL_DIR/screensaver/$file"
 done
 
 # Download fonts from peppy_remote repo (full set for remote client)

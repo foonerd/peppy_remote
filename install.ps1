@@ -102,7 +102,30 @@ $FormatIcons = @(
 )
 
 function Write-Banner { param([string]$Text) Write-Host ""; Write-Host "========================================"; Write-Host " $Text"; Write-Host "========================================"; Write-Host "" }
-function Download-File { param([string]$Uri, [string]$OutPath) Invoke-WebRequest -Uri $Uri -OutFile $OutPath -UseBasicParsing }
+function Download-File {
+    param([string]$Uri, [string]$OutPath)
+    try {
+        Invoke-WebRequest -Uri $Uri -OutFile $OutPath -UseBasicParsing
+    } catch {
+        $status = $null
+        try { $status = [int]$_.Exception.Response.StatusCode } catch {}
+        Write-Host ""
+        if ($status -eq 404) {
+            Write-Host "ERROR: File not found (404):" -ForegroundColor Red
+            Write-Host "  $Uri"
+            Write-Host "This usually means the selected branch does not contain this file." -ForegroundColor Yellow
+            Write-Host "Branches in use: peppy_remote='$RepoBranch', peppy_screensaver='$ScreensaverRepoBranch'." -ForegroundColor Yellow
+            Write-Host "For the experimental build, download the installer from that branch AND pass -b experimental:" -ForegroundColor Yellow
+            Write-Host "  irm https://raw.githubusercontent.com/foonerd/peppy_remote/experimental/install.ps1 -OutFile install.ps1"
+            Write-Host "  powershell -ExecutionPolicy Bypass -File install.ps1 -b experimental"
+        } else {
+            Write-Host "ERROR: Download failed ($status):" -ForegroundColor Red
+            Write-Host "  $Uri"
+            Write-Host "  $($_.Exception.Message)"
+        }
+        exit 1
+    }
+}
 
 function Get-PythonCommand {
     foreach ($cmd in @("py -3", "python", "python3")) {
