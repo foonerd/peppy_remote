@@ -17,7 +17,7 @@ Config model v2 (multi-profile):
   load.
 """
 
-__version__ = "3.4.1"  # Footlocked to PeppyMeter Screensaver release
+__version__ = "3.4.2"  # Footlocked to PeppyMeter Screensaver release
 
 import json
 import logging

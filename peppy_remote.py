@@ -79,6 +79,7 @@ from peppy_smb import SMBMount
 from peppy_asset import (
     setup_format_icons,
     setup_fonts,
+    sync_handlers_from_server,
     _patch_handlers_for_local_icons,
     _unc_paths_for_windows,
 )
@@ -506,6 +507,12 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         print("Run the installer to download PeppySpectrum.")
         return False
     
+    # Keep handlers + fonts byte-identical to the connected server (self-healing,
+    # integrity-checked). Must run BEFORE setup_format_icons so the local-icon patch
+    # is applied to any freshly synced handler files. No-op on older servers.
+    sync_handlers_from_server(screensaver_path, server_info['ip'],
+                              server_info.get('volumio_port', 3000))
+
     # Setup format icons - copy bundled icons to screensaver/ where handlers expect them
     # This must happen BEFORE importing handlers as they check for icons at init time
     setup_format_icons(screensaver_path, server_info['ip'], 

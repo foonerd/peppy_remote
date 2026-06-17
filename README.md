@@ -4,7 +4,7 @@ Remote display client for the [PeppyMeter Screensaver](https://github.com/fooner
 
 This client uses the **same rendering code** as the Volumio plugin (turntable, cassette, meters) but receives audio data over the network. It waits for the server's first announcement before starting the meter (syncing screen). By default it syncs to the server's theme (including random meter) and only reloads when the theme folder or theme name actually changes. You can optionally **lock this client to a fixed theme** (kiosk mode) so it always shows one template folder and meter, ignoring server theme changes.
 
-**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
+**Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, folder image layer and artist fanart slideshow (resolved by the server, including fade/merge transitions), playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
 
 **Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.3.2). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
 
@@ -487,7 +487,7 @@ Command-line arguments override config file settings:
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
    - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server's current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility—see [Version compatibility and startup](#version-compatibility-and-startup)).
-2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin's advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s).
+2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin's advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s). After the check passes, the client **syncs handler/font files from the server's manifest** - pulling only files whose `sha256` differs (integrity-checked, atomic; a no-op against older servers without the manifest) - so it always runs the same handler code as the server, regardless of which branch it was installed from.
 3. **Startup / syncing**: After the version check passes, the client shows a "Waiting for data from server" / "Please wait a moment." screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server's current theme (including when the server uses random meter) before drawing.
 4. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
    - Uses direct IP address from discovery for reliable connectivity
@@ -547,6 +547,8 @@ After installation the directory looks like this (Linux; on Windows the launcher
 │   ├── volumio_indicators.py   # Volume/mute/shuffle icons
 │   ├── volumio_spectrum.py     # Spectrum integration
 │   ├── volumio_basic.py        # Basic display handler
+│   ├── volumio_folderimage.py  # Folder image layer (back/logo art)
+│   ├── volumio_artistfanart.py # Artist fanart slideshow
 │   ├── screensaverspectrum.py
 │   ├── fonts/            # Bundled fonts for meter/theme text (see Fonts below)
 │   └── format-icons/     # Track type icons (SVG)
@@ -556,7 +558,7 @@ After installation the directory looks like this (Linux; on Windows the launcher
 
 ## Fonts
 
-The installer downloads a full set of fonts to `screensaver/fonts/` so the meter and themes render correctly without relying on the server or system fonts. Bundled families include **DSEG7** (LCD-style digits), **Lato**, **Gibson**, **Font Awesome**, **Material Icons**, **Material Design Icons**, and **Glyphicons Halflings**. Themes and handlers reference these from the screensaver path.
+The installer downloads a full set of fonts to `screensaver/fonts/` so the meter and themes render correctly without relying on the server or system fonts. The primary meter text font is **PeppyFont** (`Light`, `Regular`, `Bold`, and `Italic`), a multi-script face with broad language coverage; the `Italic` face provides real italics for Latin/Cyrillic/Greek and upright fallback for scripts without italics. Additional bundled families include **DSEG7** (LCD-style digits), **Lato**, **Gibson**, **Font Awesome**, **Material Icons**, **Material Design Icons**, and **Glyphicons Halflings**. Themes and handlers reference these from the screensaver path.
 
 ## Format Icons
 
