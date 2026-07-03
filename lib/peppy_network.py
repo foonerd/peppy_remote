@@ -108,6 +108,7 @@ class ConfigVersionListener(threading.Thread):
         self.current_version_holder = current_version_holder  # dict with 'version' and 'active_meter' keys
         self.server_ip = server_ip  # if set, only accept packets from this IP
         self.reload_requested = False
+        self.reload_generation = 0  # bumped on each reload signal (invalidates client cache)
         self.new_active_meter = None  # Set when active_meter changes (for config update)
         self.first_announcement_received = False  # True after first valid UDP packet (for sync screen)
         self._stop = False
@@ -115,6 +116,11 @@ class ConfigVersionListener(threading.Thread):
         self.bound_port = None  # Actual local UDP port (may differ if multiple clients on one host)
         self._bound_event = threading.Event()
         self.ignore_active_meter = False  # True in kiosk mode: skip server active_meter changes
+
+    def _signal_reload(self):
+        """Request a config reload; bump generation so clients re-evaluate."""
+        self.reload_requested = True
+        self.reload_generation += 1
 
     def wait_until_bound(self, timeout=5.0):
         """Wait for bind attempt to finish (success or failure). Returns True if bound to a port."""
@@ -166,7 +172,7 @@ class ConfigVersionListener(threading.Thread):
                     if new_version:
                         current = self.current_version_holder.get('version', '')
                         if _norm_str(new_version) != _norm_str(current):
-                            self.reload_requested = True
+                            self._signal_reload()
                     
                     # Check active_meter change (random meter sync, protocol v3+)
                     # In kiosk mode (ignore_active_meter=True), server active_meter
@@ -178,7 +184,7 @@ class ConfigVersionListener(threading.Thread):
                             if _norm_str(new_meter) != _norm_str(current_meter):
                                 # Active meter changed - trigger reload with new meter name
                                 self.new_active_meter = _norm_str(new_meter)
-                                self.reload_requested = True
+                                self._signal_reload()
                             
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
