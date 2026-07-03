@@ -772,9 +772,11 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         except Exception:
             reload_callback_supported = False
 
-        # Cache for "should exit for reload?" so we only fetch once per reload request
+        # Cache for "should exit for reload?" so we only fetch once per reload signal
         _reload_check_done = [False]
         _reload_should_exit = [None]
+        _reload_generation_seen = [-1]
+        _pending_active_meter = [None]
         # Client theme override for reload checks (kiosk: use display.meter_folder + display.meter when both set)
         _display = client_config.get("display") or {}
         _of = (str(_display.get("meter_folder") or "")).strip()
@@ -789,13 +791,19 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         def _check_reload_callback():
             """Return True only when we actually need to reload (folder or theme would change)."""
             if not version_listener.reload_requested:
-                _reload_check_done[0] = False
                 return False
-            if _reload_check_done[0]:
+            gen = version_listener.reload_generation
+            if gen != _reload_generation_seen[0]:
+                _reload_generation_seen[0] = gen
+                _reload_check_done[0] = False
+            elif _reload_check_done[0]:
                 return _reload_should_exit[0]
             # Authoritative on-screen state is pm.util; do not prefer current_version_holder (it can
             # race ahead of the display after UDP and falsely match parse_server_meter_state).
-            active_meter_override = version_listener.new_active_meter or current_version_holder.get('active_meter', '')
+            active_meter_override = (
+                version_listener.new_active_meter
+                or _pending_active_meter[0]
+                or current_version_holder.get('active_meter', ''))
             current_folder = pm.util.meter_config.get(SCREEN_INFO, {}).get(METER_FOLDER, '')
             current_meter = (pm.util.meter_config.get(METER, '') or '') or current_version_holder.get('active_meter', '')
             success, config_content, _ = config_fetcher.fetch()
@@ -831,6 +839,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 # appropriate after comparing on-screen state to the server.
                 # Save new_active_meter BEFORE clearing for use after display loop exits
                 pending_active_meter = version_listener.new_active_meter
+                _pending_active_meter[0] = pending_active_meter
                 version_listener.new_active_meter = None
                 Path(peppy_running_file).touch()
                 try:
