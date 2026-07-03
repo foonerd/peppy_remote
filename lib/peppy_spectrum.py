@@ -43,6 +43,7 @@ class RemoteSpectrumOutput:
         # Validate and clamp decay rate to sensible range
         self._decay_rate = max(0.5, min(0.99, decay_rate))
         self._spectrum_templates_path = spectrum_templates_path  # Override for local templates
+        self._quantized_heights = []  # last drawn step-aligned bar heights
         
         log_client(f"Spectrum decay rate: {self._decay_rate}", "verbose")
         
@@ -176,15 +177,14 @@ class RemoteSpectrumOutput:
                     screen_h = self.util.meter_config[SCREEN_INFO][HEIGHT]
                     self.util.screen_rect = pg.Rect(0, 0, screen_w, screen_h)
                 
-                # Store spectrum clip rect for drawing
-                # The spectrum content is positioned based on spectrum.x and spectrum.y from spectrum.txt
-                # NOT from self.pos (meters.txt spectrum.pos which is often 0,0)
+                # Spectrum draw/clean bounds: meters.txt spectrum.size canvas only.
+                # Do NOT extend upward by bar height — that overlaps time/metadata UI above.
                 spectrum_x = self.sp.spectrum_configs[0].get('spectrum.x', 0)
                 spectrum_y = self.sp.spectrum_configs[0].get('spectrum.y', 0)
-                # The clip rect should cover where the spectrum actually renders
-                # Content ranges from (spectrum_x, spectrum_y - bar_height) to (spectrum_x + w, spectrum_y + reflection_height)
-                # For safety, use the full spectrum canvas dimensions positioned at spectrum.x/y
-                self.spectrum_clip_rect = pg.Rect(spectrum_x, spectrum_y - self.sp.height, self.w, self.h + self.sp.height)
+                self.spectrum_canvas_rect = pg.Rect(
+                    int(spectrum_x + pos_x), int(spectrum_y + pos_y),
+                    int(self.w), int(self.h))
+                self.spectrum_clip_rect = self.spectrum_canvas_rect
                 
                 # Set run flag but DON'T start data source (we feed via network)
                 self.sp.run_flag = True
@@ -195,6 +195,7 @@ class RemoteSpectrumOutput:
                 n_bars = len(self.sp._prev_bar_heights) if (hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights) else (len(self.sp.components) - 1 if self.sp.components else int(self.sp.config.get('size', 30)))
                 n_bars = max(1, n_bars)
                 self._local_bins = [0.0] * n_bars
+                self._quantized_heights = [0.0] * n_bars
                 # Force-draw all bars at 0 so set_bars() full height is never shown (no full-value bar / ghost)
                 if hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights:
                     for i in range(min(n_bars, len(self.sp._prev_bar_heights))):
@@ -221,6 +222,39 @@ class RemoteSpectrumOutput:
             traceback.print_exc()
             self.sp = None
     
+    def _quantize_height(self, height):
+        """Snap bar height to engine step size (segmented bar images need integer steps)."""
+        if height <= 0:
+            return 0.0
+        step = float(getattr(self.sp, 'step', 0) or 0)
+        if step <= 0:
+            return float(int(height))
+        return float(int(height / step) * step)
+
+    @staticmethod
+    def _bar_dirty_rect(comp, old_content_y, max_bar_height):
+        """Column dirty rect covering old and new bar top when height changes."""
+        import pygame as pg
+        new_y = int(comp.content_y)
+        x = int(comp.content_x)
+        w = int(comp.bounding_box.w) if comp.bounding_box else 0
+        col_h = int(max_bar_height)
+        if old_content_y is None:
+            return pg.Rect(x, new_y, w, col_h)
+        old_y = int(old_content_y)
+        top_y = min(old_y, new_y)
+        return pg.Rect(x, top_y, w, col_h + abs(new_y - old_y))
+
+    def _topping_component(self, bar_index):
+        """Return topping component for a 1-based bar index, or None."""
+        if self.sp.topping_height is None or self.sp.topping_step is None:
+            return None
+        n = 2 if self.sp.reflection != [None] else 1
+        idx = bar_index + self.sp.config.get('size', 30) * n
+        if idx < len(self.sp.components):
+            return self.sp.components[idx]
+        return None
+
     def update(self):
         """Update spectrum from network data and render."""
         dirty_rects = []
@@ -284,20 +318,39 @@ class RemoteSpectrumOutput:
             self._last_packet_seq = current_seq
         
         # Step 3: Update visual components (no fade-in; follow server data + decay)
+        if len(self._quantized_heights) < num_bars:
+            self._quantized_heights.extend(
+                [0.0] * (num_bars - len(self._quantized_heights)))
+        max_bar_h = int(getattr(self.sp, 'height', 0) or 0)
+        any_topping_active = False
         for i in range(num_bars):
-            new_height = self._local_bins[i]
+            bar_height = self._quantize_height(self._local_bins[i])
             idx = i + 1  # 1-based index for Spectrum methods
-            
-            # Force update by setting prev to different value (bypass optimization)
-            if hasattr(self.sp, '_prev_bar_heights') and self.sp._prev_bar_heights and i < len(self.sp._prev_bar_heights):
-                self.sp._prev_bar_heights[i] = new_height + 100
-            
+            prev_height = self._quantized_heights[i]
+            bar_changed = abs(bar_height - prev_height) >= 1
+            comp = self.sp.components[idx] if idx < len(self.sp.components) else None
+            old_content_y = comp.content_y if comp is not None else None
+
+            if bar_changed:
+                self._quantized_heights[i] = bar_height
+                try:
+                    self.sp.set_bar_y(idx, bar_height)
+                    if comp is not None and max_bar_h > 0 and self.sp._dirty_rects:
+                        self.sp._dirty_rects[-1] = self._bar_dirty_rect(
+                            comp, old_content_y, max_bar_h)
+                    if hasattr(self.sp, 'set_reflection_y'):
+                        self.sp.set_reflection_y(idx, bar_height)
+                except Exception:
+                    pass
+
+            # Peak-hold toppings rely on repeated calls with a stable bar height
+            # (host pipe loop calls set_topping_y even when set_bar_y skips).
             try:
-                self.sp.set_bar_y(idx, new_height)
-                if hasattr(self.sp, 'set_reflection_y'):
-                    self.sp.set_reflection_y(idx, new_height)
                 if hasattr(self.sp, 'set_topping_y'):
-                    self.sp.set_topping_y(idx, new_height)
+                    self.sp.set_topping_y(idx, bar_height)
+                    topping = self._topping_component(idx)
+                    if topping is not None and topping.visible:
+                        any_topping_active = True
             except Exception:
                 pass
         
@@ -305,25 +358,28 @@ class RemoteSpectrumOutput:
         try:
             import pygame as pg
             prev_clip = self.util.pygame_screen.get_clip()
-            # Use spectrum-specific clip rect
-            clip_rect = getattr(self, 'spectrum_clip_rect', self.util.screen_rect)
+            clip_rect = getattr(self, 'spectrum_canvas_rect', None)
+            if clip_rect is None:
+                clip_rect = getattr(self, 'spectrum_clip_rect', self.util.screen_rect)
             self.util.pygame_screen.set_clip(clip_rect)
-            
-            # Clean and draw
-            if hasattr(self.sp, '_dirty_rects') and self.sp._dirty_rects:
-                old_dirty = [r.copy() for r in self.sp._dirty_rects if r]
-                for rect in old_dirty:
-                    self.sp.draw_area(rect)
-                self.sp._dirty_rects = []
-                dirty_rects.extend(old_dirty)
-            self.sp.draw()
-            
-            # Return spectrum dirty regions for parent's display.update(dirty_rects).
-            if hasattr(self.sp, '_dirty_rects') and self.sp._dirty_rects:
-                dirty_rects.extend([r.copy() for r in self.sp._dirty_rects if r])
-            elif clip_rect:
+
+            bar_dirty = [r.copy() for r in self.sp._dirty_rects if r] if self.sp._dirty_rects else []
+            if any_topping_active:
+                self.sp.draw_area(clip_rect)
                 dirty_rects.append(clip_rect.copy())
-            
+            elif bar_dirty:
+                for rect in bar_dirty:
+                    clipped = rect.clip(clip_rect)
+                    if clipped.width > 0 and clipped.height > 0:
+                        self.sp.draw_area(clipped)
+                dirty_rects.extend(bar_dirty)
+
+            self.sp._dirty_rects = []
+            self.sp.draw()
+
+            if not dirty_rects and clip_rect:
+                dirty_rects.append(clip_rect.copy())
+
             self.util.pygame_screen.set_clip(prev_clip)
         except Exception:
             pass  # Silently handle draw errors
@@ -338,6 +394,7 @@ class RemoteSpectrumOutput:
             except Exception:
                 pass
         self._initialized = False
+        self._quantized_heights = []
     
     def get_current_bins(self):
         """Get current bar heights (for compatibility)."""
