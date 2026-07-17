@@ -275,19 +275,20 @@ def _peppy_sha256_file(path):
 def _sync_one_file(base_url, kind, item, dest_dir):
     """Download one manifest entry into dest_dir if its sha256 differs from local.
 
-    Returns True if a file was written, False otherwise.
+    Returns one of: "current" (local already matches), "updated" (file written),
+    or "failed" (any fetch/decode/hash/write problem; existing file is kept).
     """
     name = item.get('name')
     want = (item.get('sha256') or '').lower()
     if not _peppy_safe_name(name):
-        return False
+        return "failed"
     dest = os.path.join(dest_dir, name)
 
     # Already current?
     if want and os.path.exists(dest):
         try:
             if _peppy_sha256_file(dest).lower() == want:
-                return False
+                return "current"
         except Exception:
             pass
 
@@ -299,23 +300,23 @@ def _sync_one_file(base_url, kind, item, dest_dir):
         )
     except Exception as e:
         log_client(f"Handler sync: fetch {name} failed ({e})", "verbose")
-        return False
+        return "failed"
 
     inner = (resp or {}).get('data') or {}
     if not inner.get('success') or not inner.get('data'):
         log_client(f"Handler sync: server did not return {name}", "verbose")
-        return False
+        return "failed"
 
     try:
         raw = base64.b64decode(inner['data'])
     except Exception:
         log_client(f"Handler sync: bad base64 for {name}", "verbose")
-        return False
+        return "failed"
 
     got = hashlib.sha256(raw).hexdigest().lower()
     if want and got != want:
         log_client(f"Handler sync: sha256 mismatch for {name}; keeping existing file", "basic")
-        return False
+        return "failed"
 
     tmp = dest + '.peppytmp'
     try:
@@ -326,7 +327,7 @@ def _sync_one_file(base_url, kind, item, dest_dir):
             os.fsync(f.fileno())
         os.replace(tmp, dest)
         log_client(f"Handler sync: updated {name}", "verbose")
-        return True
+        return "updated"
     except Exception as e:
         log_client(f"Handler sync: write {name} failed ({e})", "verbose")
         try:
@@ -334,45 +335,96 @@ def _sync_one_file(base_url, kind, item, dest_dir):
                 os.remove(tmp)
         except Exception:
             pass
-        return False
+        return "failed"
+
+
+def _verify_manifest_files(items, dest_dir):
+    """Return the names of manifest entries whose local file is missing or whose
+    sha256 does not match the manifest. Read-only (hashes local files only)."""
+    stale = []
+    for item in items:
+        name = item.get('name')
+        want = (item.get('sha256') or '').lower()
+        if not _peppy_safe_name(name) or not want:
+            continue
+        dest = os.path.join(dest_dir, name)
+        if not os.path.exists(dest):
+            stale.append(name)
+            continue
+        try:
+            if _peppy_sha256_file(dest).lower() != want:
+                stale.append(name)
+        except Exception:
+            stale.append(name)
+    return stale
 
 
 def sync_handlers_from_server(screensaver_path, server_ip, volumio_port=3000):
     """Pull the handler (.py) + font set the connected server actually runs.
 
     Must run BEFORE the handlers are imported (and before setup_format_icons, so the
-    local-icon patch is applied to the freshly synced files). No-ops silently if the
+    local-icon patch is applied to the freshly synced files). No-ops safely if the
     server is older and has no manifest endpoint.
+
+    Returns a result dict: {ok, stale, updated, plugin_version, reason}. `ok` is True
+    when every manifest file is verified present with a matching hash locally (or when
+    the server has no manifest endpoint, which is a legitimate older-server no-op).
     """
     base_url = f"http://{server_ip}:{volumio_port}/api/v1/pluginEndpoint"
     try:
         resp = _peppy_post_json(base_url, {'endpoint': 'peppy_screensaver_manifest'}, timeout=10)
     except Exception as e:
         log_client(f"Handler sync: manifest unavailable ({e}); using bundled handlers", "verbose")
-        return
+        return {"ok": True, "stale": [], "updated": 0, "plugin_version": None, "reason": "no-manifest"}
 
     data = (resp or {}).get('data') or {}
     if not data.get('success'):
         log_client("Handler sync: server has no manifest endpoint; using bundled handlers", "basic")
-        return
+        return {"ok": True, "stale": [], "updated": 0, "plugin_version": None, "reason": "no-manifest"}
 
     handlers = data.get('handlers') or []
     fonts = data.get('fonts') or []
+    plugin_version = data.get('plugin_version')
     log_client(
-        f"Handler sync: server plugin {data.get('plugin_version')!r}, "
+        f"Handler sync: server plugin {plugin_version!r}, "
         f"{len(handlers)} handler(s), {len(fonts)} font(s)", "basic"
     )
 
     updated = 0
-    for item in handlers:
-        if _sync_one_file(base_url, 'handler', item, screensaver_path):
-            updated += 1
+    failed = []
     fonts_dir = os.path.join(screensaver_path, 'fonts')
-    for item in fonts:
-        if _sync_one_file(base_url, 'font', item, fonts_dir):
+    for item in handlers:
+        status = _sync_one_file(base_url, 'handler', item, screensaver_path)
+        if status == "updated":
             updated += 1
+        elif status == "failed":
+            failed.append(item.get('name'))
+    for item in fonts:
+        status = _sync_one_file(base_url, 'font', item, fonts_dir)
+        if status == "updated":
+            updated += 1
+        elif status == "failed":
+            failed.append(item.get('name'))
 
-    if updated:
+    # Read-only verification: local set must now equal the manifest, hash for hash.
+    stale = _verify_manifest_files(handlers, screensaver_path)
+    stale += _verify_manifest_files(fonts, fonts_dir)
+
+    if stale:
+        log_client(
+            "Handler sync: FAILED to sync " + str(len(stale)) + " file(s): "
+            + ", ".join(n for n in stale if n)
+            + " - remote may render stale features", "basic"
+        )
+    elif updated:
         log_client(f"Handler sync: updated {updated} file(s) from server", "basic")
     else:
         log_client("Handler sync: all files already current", "basic")
+
+    return {
+        "ok": not stale,
+        "stale": stale,
+        "updated": updated,
+        "plugin_version": plugin_version,
+        "reason": "synced",
+    }

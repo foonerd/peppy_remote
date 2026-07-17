@@ -561,8 +561,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     # Keep handlers + fonts byte-identical to the connected server (self-healing,
     # integrity-checked). Must run BEFORE setup_format_icons so the local-icon patch
     # is applied to any freshly synced handler files. No-op on older servers.
-    sync_handlers_from_server(screensaver_path, server_info['ip'],
-                              server_info.get('volumio_port', 3000))
+    sync_result = sync_handlers_from_server(screensaver_path, server_info['ip'],
+                                            server_info.get('volumio_port', 3000))
+    if sync_result and not sync_result.get('ok'):
+        stale = sync_result.get('stale') or []
+        print("=" * 70)
+        print("WARNING: Remote is NOT running the server's handler code.")
+        print("Stale/missing: " + ", ".join(n for n in stale if n))
+        print("Features such as right-align, folder border and reel cdart may")
+        print("not match the server until this is resolved (check network/host).")
+        print("=" * 70)
 
     # Setup format icons - copy bundled icons to screensaver/ where handlers expect them
     # This must happen BEFORE importing handlers as they check for icons at init time
