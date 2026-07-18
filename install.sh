@@ -314,6 +314,7 @@ VOLUMIO_FILES=(
     "volumio_basic.py"
     "volumio_folderimage.py"
     "volumio_artistfanart.py"
+    "volumio_typeformat.py"
     "screensaverspectrum.py"
 )
 
