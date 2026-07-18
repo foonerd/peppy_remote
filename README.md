@@ -6,7 +6,7 @@ This client uses the **same rendering code** as the Volumio plugin (turntable, c
 
 **Features:** Full meter rendering (turntable, cassette, basic skins), spectrum analyzer, album art and vinyl display, folder image layer and artist fanart slideshow (resolved by the server, including fade/merge transitions), playback indicators (volume, mute, shuffle, repeat, progress), format icons, ticker and scrolling text, time display, persist countdown during pause. Multi-profile support (multiple server connections), auto-discovery, config wizard (GUI with tabbed editor and CLI with profile manager), profile export/import, SMB or local templates, windowed/frameless/fullscreen modes.
 
-**Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.3.2). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
+**Version:** Client version is aligned with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) (e.g. 3.4.4). Use the same version for best compatibility. Run `peppy_remote --version` to see the installed version.
 
 ### Version compatibility and startup
 
@@ -470,7 +470,7 @@ Command-line arguments override config file settings:
 - **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.). **Python 3.12+** required; version must match the server (Volumio uses 3.12). The client can run on a Pi as a remote display; use windowed or fullscreen and avoid heavy spectrum templates if CPU is limited.
 - **Windows**: Windows 10/11, **Python 3.12+**, Git; templates use UNC paths (no SMB mount)
 - Network access to Volumio box
-- Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin **v3.3.0 or higher** with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery). For best compatibility use the same version as the plugin (e.g. client 3.3.2 with PeppyMeter Screensaver 3.3.2).
+- Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin **v3.3.0 or higher** with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery). For best compatibility use the same version as the plugin (e.g. client 3.4.4 with PeppyMeter Screensaver 3.4.4).
 - **Linux GUI wizard**: `python3-tk` (installed automatically by the install script on desktop systems)
 
 ## Network Ports
@@ -625,7 +625,7 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Check Volumio logs for plugin errors
 
 **Version mismatch / "server plugin is too old" / client exits after wait:**
-- Match **peppy_remote** to the **PeppyMeter Screensaver** release on Volumio (same semver, e.g. 3.3.2 with 3.3.2).
+- Match **peppy_remote** to the **PeppyMeter Screensaver** release on Volumio (same semver, e.g. 3.4.4 with 3.4.4).
 - Ensure Volumio is up and the plugin is enabled so HTTP `getRemoteConfig` succeeds; increase **`--server-wait-timeout`** if the device is slow to boot.
 - For emergency testing only: **`--skip-version-check`** (expect undefined behavior if versions differ).
 - On the server, **Verbose** debug can log remote **`client_version`** vs server release when control messages arrive.

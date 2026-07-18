@@ -76,7 +76,7 @@ $VolumioFiles = @(
     "volumio_peppymeter.py", "volumio_configfileparser.py", "volumio_turntable.py",
     "volumio_cassette.py", "volumio_compositor.py", "volumio_indicators.py",
     "volumio_spectrum.py", "volumio_basic.py", "volumio_folderimage.py",
-    "volumio_artistfanart.py", "screensaverspectrum.py"
+    "volumio_artistfanart.py", "volumio_typeformat.py", "screensaverspectrum.py"
 )
 
 $Fonts = @(

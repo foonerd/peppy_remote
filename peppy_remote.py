@@ -368,12 +368,13 @@ def _create_peppymeter(label=""):
     return pm, meter_config_volumio
 
 
-def _wire_peppymeter(pm, meter_config_volumio, remote_ds):
+def _wire_peppymeter(pm, meter_config_volumio, remote_ds, spectrum_factory=None):
     """Wire remote data source and create callback handler.
 
     :param pm: Peppymeter instance
     :param meter_config_volumio: Parsed Volumio meter config dict
     :param remote_ds: RemoteDataSource instance
+    :param spectrum_factory: Optional () -> RemoteSpectrumOutput for random/list restarts
     :returns: CallBack instance (fully wired to pm)
     """
     from volumio_peppymeter import CallBack
@@ -383,6 +384,7 @@ def _wire_peppymeter(pm, meter_config_volumio, remote_ds):
         pm.meter.data_source = remote_ds
 
     callback = CallBack(pm.util, meter_config_volumio, pm.meter)
+    callback.spectrum_factory = spectrum_factory
     pm.meter.callback_start = callback.peppy_meter_start
     pm.meter.callback_stop = callback.peppy_meter_stop
     pm.dependent = callback.peppy_meter_update
@@ -436,9 +438,54 @@ def _attach_display(pm, meter_config_volumio, screen, screen_w, screen_h, depth,
     return screen, screen_w, screen_h, depth
 
 
+def _make_remote_spectrum_factory(pm_holder, meter_config_holder, screensaver_path,
+                                  spectrum_receiver, client_config, live_holder):
+    """Build a factory that creates RemoteSpectrumOutput for the current meter.
+
+    Used by CallBack.peppy_meter_start after random/list rotation clears spectrum_output.
+    pm_holder / meter_config_holder are single-element lists updated on reload.
+    live_holder[0] tracks the latest instance for cleanup.
+    """
+    def _factory():
+        if not spectrum_receiver:
+            return None
+        try:
+            from volumio_configfileparser import SPECTRUM_VISIBLE
+            from configfileparser import METER
+            pm = pm_holder[0]
+            meter_config_volumio = meter_config_holder[0]
+            meter_name = pm.util.meter_config[METER]
+            if not meter_name or str(meter_name).lower() == 'random' or ',' in str(meter_name):
+                return None
+            meter_section = meter_config_volumio.get(meter_name, {})
+            if not meter_section.get(SPECTRUM_VISIBLE, False):
+                return None
+            spectrum_config = (client_config or {}).get('spectrum', {})
+            decay_rate = spectrum_config.get('decay_rate', 0.95)
+            templates_config = (client_config or {}).get('templates', {})
+            spectrum_templates_path = templates_config.get('spectrum_local_path')
+            remote_spectrum = RemoteSpectrumOutput(
+                pm.util, meter_config_volumio, screensaver_path, spectrum_receiver,
+                decay_rate=decay_rate,
+                spectrum_templates_path=spectrum_templates_path
+            )
+            remote_spectrum.start()
+            live_holder[0] = remote_spectrum
+            return remote_spectrum
+        except Exception as e:
+            print(f"  Remote spectrum factory failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    return _factory
+
+
 def _init_remote_spectrum(pm, meter_config_volumio, screensaver_path,
-                          spectrum_receiver, callback, client_config):
+                          spectrum_receiver, callback, client_config, live_holder=None):
     """Initialize remote spectrum if receiver is provided and spectrum is visible.
+
+    Prefer callback.spectrum_factory for random/list restarts; this path covers the
+    initial concrete-meter case (pre-inject before peppy_meter_start).
 
     :returns: RemoteSpectrumOutput instance, or None
     """
@@ -448,6 +495,8 @@ def _init_remote_spectrum(pm, meter_config_volumio, screensaver_path,
         from volumio_configfileparser import SPECTRUM_VISIBLE
         from configfileparser import METER
         meter_name = pm.util.meter_config[METER]
+        if not meter_name or str(meter_name).lower() == 'random' or ',' in str(meter_name):
+            return None
         meter_section = meter_config_volumio.get(meter_name, {})
         spectrum_visible = meter_section.get(SPECTRUM_VISIBLE, False)
         if not spectrum_visible:
@@ -463,6 +512,8 @@ def _init_remote_spectrum(pm, meter_config_volumio, screensaver_path,
         )
         remote_spectrum.start()
         callback.spectrum_output = remote_spectrum
+        if live_holder is not None:
+            live_holder[0] = remote_spectrum
         return remote_spectrum
     except Exception as e:
         print(f"  Remote spectrum init failed: {e}")
@@ -510,8 +561,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     # Keep handlers + fonts byte-identical to the connected server (self-healing,
     # integrity-checked). Must run BEFORE setup_format_icons so the local-icon patch
     # is applied to any freshly synced handler files. No-op on older servers.
-    sync_handlers_from_server(screensaver_path, server_info['ip'],
-                              server_info.get('volumio_port', 3000))
+    sync_result = sync_handlers_from_server(screensaver_path, server_info['ip'],
+                                            server_info.get('volumio_port', 3000))
+    if sync_result and not sync_result.get('ok'):
+        stale = sync_result.get('stale') or []
+        print("=" * 70)
+        print("WARNING: Remote is NOT running the server's handler code.")
+        print("Stale/missing: " + ", ".join(n for n in stale if n))
+        print("Features such as right-align, folder border and reel cdart may")
+        print("not match the server until this is resolved (check network/host).")
+        print("=" * 70)
 
     # Setup format icons - copy bundled icons to screensaver/ where handlers expect them
     # This must happen BEFORE importing handlers as they check for icons at init time
@@ -597,6 +656,16 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         pm, meter_config_volumio = _create_peppymeter()
         log_debug("=== PeppyMeter Remote Client starting ===", "basic")
 
+        # Holders so spectrum_factory always sees the current pm/config after reload,
+        # and so random/list restarts can recreate RemoteSpectrumOutput.
+        pm_holder = [pm]
+        meter_config_holder = [meter_config_volumio]
+        remote_spectrum_holder = [None]
+        spectrum_factory = _make_remote_spectrum_factory(
+            pm_holder, meter_config_holder, screensaver_path,
+            spectrum_receiver, client_config, remote_spectrum_holder
+        )
+
         # UDP listeners and registration before RemoteDataSource (supports multiple clients on one host)
         current_version_holder = {
             'version': _norm_str(config_fetcher.cached_version),
@@ -637,7 +706,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                     pass
         
         # Wire remote data source and create callback handler
-        callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
+        callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds, spectrum_factory)
         
         # Create persist manager for countdown display (mirrors server's Node.js persist file handling)
         persist_manager = PersistManager(
@@ -740,7 +809,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
             current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
             pm, meter_config_volumio = _create_peppymeter(label="sync")
-            callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
+            pm_holder[0] = pm
+            meter_config_holder[0] = meter_config_volumio
+            callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds, spectrum_factory)
             callback.persist_manager = persist_manager
             screen, screen_w, screen_h, depth = _attach_display(
                 pm, meter_config_volumio, screen, screen_w, screen_h, depth,
@@ -750,10 +821,13 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
             version_listener.new_active_meter = None
         
         # Initialize remote spectrum if receiver is provided and spectrum is enabled
+        # (concrete meter only; random/list uses spectrum_factory from peppy_meter_start)
         remote_spectrum = _init_remote_spectrum(
             pm, meter_config_volumio, screensaver_path, spectrum_receiver,
-            callback, client_config
+            callback, client_config, live_holder=remote_spectrum_holder
         )
+        if remote_spectrum is None:
+            remote_spectrum = remote_spectrum_holder[0]
         
         mode_str = "fullscreen" if is_fullscreen else ("windowed" if is_windowed else "frameless")
         print(f"Starting meter display ({mode_str})...")
@@ -910,7 +984,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 current_version_holder['active_meter_folder'] = _norm_str(new_meter_folder)
                 current_version_holder['version'] = _norm_str(config_fetcher.cached_version)
                 pm, meter_config_volumio = _create_peppymeter(label="reload")
-                callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds)
+                pm_holder[0] = pm
+                meter_config_holder[0] = meter_config_volumio
+                callback = _wire_peppymeter(pm, meter_config_volumio, remote_ds, spectrum_factory)
                 
                 # Update persist manager with potentially changed settings from server
                 persist_manager.update_settings(
@@ -920,9 +996,14 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 callback.persist_manager = persist_manager
                 
                 # Stop old spectrum if running
-                if spectrum_receiver and remote_spectrum:
-                    remote_spectrum.stop_thread()
+                old_spectrum = remote_spectrum_holder[0] or remote_spectrum
+                if spectrum_receiver and old_spectrum:
+                    try:
+                        old_spectrum.stop_thread()
+                    except Exception:
+                        pass
                     remote_spectrum = None
+                    remote_spectrum_holder[0] = None
                 
                 # Resize display if resolution changed, attach screen to pm
                 screen, screen_w, screen_h, depth = _attach_display(
@@ -933,15 +1014,18 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 # Re-initialize remote spectrum AFTER screen is attached
                 remote_spectrum = _init_remote_spectrum(
                     pm, meter_config_volumio, screensaver_path, spectrum_receiver,
-                    callback, client_config
+                    callback, client_config, live_holder=remote_spectrum_holder
                 )
+                if remote_spectrum is None:
+                    remote_spectrum = remote_spectrum_holder[0]
                 
                 print("Config reloaded from server.")
         finally:
             version_listener.stop_listener()
-            if remote_spectrum:
+            cleanup_spectrum = remote_spectrum_holder[0] or remote_spectrum
+            if cleanup_spectrum:
                 try:
-                    remote_spectrum.stop_thread()
+                    cleanup_spectrum.stop_thread()
                 except Exception:
                     pass
             # Cleanup persist manager
