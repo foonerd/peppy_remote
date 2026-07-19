@@ -13,9 +13,107 @@ You need:
 
 1. A Volumio system with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) installed, **Remote Display Server** enabled, and the **same version** as the remote client (for example both **3.4.4**).
 2. Phone or tablet on the **same Wi‑Fi** as Volumio.
-3. A Windows or Linux PC that already has a working peppy_remote install of that same version (you will copy files from it).
+3. A Windows or Linux PC — you will install peppy_remote from the **Android feature branch** on that PC, then copy files to the tablet.
 4. A USB file-transfer cable or another way to copy folders to the tablet (Files app, SMB, etc.).
 5. Optional but strongly recommended: a **USB keyboard** for typing in Pydroid Terminal.
+
+---
+
+## Step 0 — Install peppy_remote on the PC (from the Android branch)
+
+Install on Windows or Linux **first**. Use the Android feature branch for the remote client, and a matching released screensaver tree for handlers (usually `main` at **3.4.4**).
+
+| Repo | Branch |
+|------|--------|
+| peppy_remote (script, `lib/`, installer) | `feature/android-pydroid` |
+| peppy_screensaver (handlers under `screensaver/`) | `main` (3.4.4) |
+
+Banner when correct:
+
+```text
+Remote files:  feature/android-pydroid (peppy_remote)
+Handler files: main (peppy_screensaver)
+```
+
+### Linux
+
+```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.sh \
+  | bash -s -- --remote-branch feature/android-pydroid --screensaver-branch main
+```
+
+With server pre-set:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.sh \
+  | bash -s -- --remote-branch feature/android-pydroid --screensaver-branch main --server volumio
+```
+
+Default install folder: `~/peppy_remote`.
+
+### Windows
+
+PowerShell cannot pass arguments through `irm ... | iex`. Download the installer from the feature branch, then run it.
+
+**Step A — download installer:**
+
+```powershell
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.ps1 -OutFile install.ps1
+```
+
+**Step B — run:**
+
+```powershell
+.\install.ps1 -RemoteBranch feature/android-pydroid -ScreensaverBranch main
+```
+
+With server pre-set:
+
+```powershell
+.\install.ps1 -RemoteBranch feature/android-pydroid -ScreensaverBranch main -Server volumio
+```
+
+If execution policy blocks the script:
+
+```cmd
+powershell -ExecutionPolicy Bypass -File install.ps1 -RemoteBranch feature/android-pydroid -ScreensaverBranch main
+```
+
+Default install folder: `%USERPROFILE%\peppy_remote`.
+
+**Note:** If winget just installed Python/Git, close all terminals, open a new one, and run Step B again.
+
+### Optional — if Volumio plugin is still on experimental
+
+Only if your Volumio PeppyMeter Screensaver is running from `experimental` (not the 3.4.4 release):
+
+```bash
+# Linux
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.sh \
+  | bash -s -- --remote-branch feature/android-pydroid --screensaver-branch experimental
+```
+
+```powershell
+# Windows (after downloading install.ps1 from feature/android-pydroid)
+.\install.ps1 -RemoteBranch feature/android-pydroid -ScreensaverBranch experimental
+```
+
+Versions must still match between plugin and client.
+
+### Smoke-test on the PC (optional)
+
+Confirm the PC install works against Volumio before copying to the tablet:
+
+```bash
+# Linux
+~/peppy_remote/peppy_remote --server volumio
+```
+
+```powershell
+# Windows
+cd $env:USERPROFILE\peppy_remote
+.\peppy_remote.cmd --server volumio
+```
 
 ---
 
@@ -74,7 +172,7 @@ If you already installed cairosvg by mistake: Pip → uninstall **cairosvg**.
 
 ## Step 3 — Prepare files on your PC
 
-On the PC, open your peppy_remote install folder:
+Use the install from **Step 0**. Open that folder:
 
 - Windows (typical): `%USERPROFILE%\peppy_remote`  
   Example: `C:\Users\YourName\peppy_remote`
@@ -86,7 +184,7 @@ You should see at least:
 - `lib\` (folder)
 - `screensaver\` (folder)
 
-If `screensaver` is missing, run the normal peppy_remote installer for your PC first (same version as the Volumio plugin).
+If `screensaver` is missing, re-run Step 0.
 
 Also prepare your meter skins on the PC:
 

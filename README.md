@@ -39,9 +39,9 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 ### Android (phone / tablet)
 
-Step-by-step Pydroid 3 install guide:
+Step-by-step Pydroid 3 install guide (includes **Linux/Windows install commands** for `feature/android-pydroid`):
 
-**[android/INSTALL.md](android/INSTALL.md)** — copy files from a PC install, pip packages, configure, run.
+**[android/INSTALL.md](android/INSTALL.md)** — PC install from branch → copy to tablet → pip → configure → run.
 
 ## Testing from experimental branch
 
