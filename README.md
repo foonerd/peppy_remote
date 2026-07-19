@@ -37,6 +37,12 @@ curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh
 
 Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remote curl ... | bash`).
 
+### Android (phone / tablet)
+
+Step-by-step Pydroid 3 install guide:
+
+**[android/INSTALL.md](android/INSTALL.md)** — copy files from a PC install, pip packages, configure, run.
+
 ## Testing from experimental branch
 
 > **This section is for testers.** If you were asked to install from the experimental branch, follow these instructions exactly. Do not mix with the Quick Install instructions above.
@@ -465,10 +471,25 @@ Command-line arguments override config file settings:
 ~/peppy_remote/peppy_remote --config --wizard-debug
 ```
 
+## Android (experimental) — Pydroid 3
+
+Full step-by-step install guide (recommended):
+
+### → [android/INSTALL.md](android/INSTALL.md)
+
+That guide covers Pydroid setup, pip packages (no pygame / no cairosvg), what to copy from a PC install, absolute template paths, Terminal `--config`, IDE run, and troubleshooting.
+
+**Summary:** same `peppy_remote.py` as desktop; copy `peppy_remote.py` + `lib/` + `screensaver/` to `Download/peppy_remote/`, plus `templates` / `templates_spectrum` under `Download/`; configure with absolute paths; run from the Pydroid IDE.
+
+**Credits:** Pydroid bring-up and the initial working patch were contributed / proven by **Lee.Yan**.
+
+Related: [android/COPY_CHECKLIST.md](android/COPY_CHECKLIST.md) · [android/TABLET_VERIFY.md](android/TABLET_VERIFY.md) · [requirements-android.txt](requirements-android.txt)
+
 ## Requirements
 
 - **Linux**: Debian-based (Ubuntu, Raspberry Pi OS, etc.). **Python 3.12+** required; version must match the server (Volumio uses 3.12). The client can run on a Pi as a remote display; use windowed or fullscreen and avoid heavy spectrum templates if CPU is limited.
 - **Windows**: Windows 10/11, **Python 3.12+**, Git; templates use UNC paths (no SMB mount)
+- **Android (experimental)**: Pydroid 3 + repository plugin; see [Android (experimental) — Pydroid 3](#android-experimental--pydroid-3). Local templates only (no SMB).
 - Network access to Volumio box
 - Volumio must have [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) plugin **v3.3.0 or higher** with "Remote Display Server" enabled (protocol v3 with `active_meter` in discovery). For best compatibility use the same version as the plugin (e.g. client 3.4.4 with PeppyMeter Screensaver 3.4.4).
 - **Linux GUI wizard**: `python3-tk` (installed automatically by the install script on desktop systems)

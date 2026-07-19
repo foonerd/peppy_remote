@@ -32,6 +32,9 @@ from peppy_common import (
     _new_profile,
     get_template_folders,
     get_meter_sections,
+    is_android,
+    android_default_template_paths,
+    apply_android_profile_defaults,
 )
 from peppy_smb import SMBMount
 from peppy_asset import _unc_paths_for_windows
@@ -65,6 +68,8 @@ def _edit_profile(config, profile_name):
     :param config: Profile config dict (modified in place)
     :param profile_name: Display name for the header
     """
+    if is_android():
+        apply_android_profile_defaults(config)
 
     def show_menu():
         _clear_screen()
@@ -212,6 +217,27 @@ def _edit_profile(config, profile_name):
 
     def config_smb():
         print()
+        if is_android():
+            defaults = android_default_template_paths()
+            print("Android: SMB is not available. Use absolute local template paths.")
+            print(f"  Suggested meter path:    {defaults['local_path']}")
+            print(f"  Suggested spectrum path: {defaults['spectrum_local_path']}")
+            print()
+            config["templates"]["use_smb"] = False
+            path = _get_input(
+                "Local templates path (absolute)",
+                config["templates"].get("local_path") or defaults['local_path'],
+            )
+            if path:
+                config["templates"]["local_path"] = path
+            spectrum = _get_input(
+                "Spectrum templates path (absolute)",
+                config["templates"].get("spectrum_local_path") or defaults['spectrum_local_path'],
+            )
+            if spectrum:
+                config["templates"]["spectrum_local_path"] = spectrum
+            return
+
         print("Use SMB mount for templates?")
         print("  1. Yes (mount from Volumio server)")
         print("  2. No (use local templates)")
@@ -445,11 +471,25 @@ def _edit_profile(config, profile_name):
         elif choice == "9":
             config_smb()
         elif choice == "10":
-            path = input("Local templates path (empty to clear): ").strip()
-            config["templates"]["local_path"] = path if path else None
+            defaults = android_default_template_paths() if is_android() else {}
+            hint = defaults.get('local_path') or config["templates"].get("local_path") or ""
+            if is_android():
+                path = _get_input("Local templates path (absolute)", hint)
+                config["templates"]["local_path"] = path if path else None
+                config["templates"]["use_smb"] = False
+            else:
+                path = input("Local templates path (empty to clear): ").strip()
+                config["templates"]["local_path"] = path if path else None
         elif choice == "11":
-            path = input("Spectrum templates path (empty to clear): ").strip()
-            config["templates"]["spectrum_local_path"] = path if path else None
+            defaults = android_default_template_paths() if is_android() else {}
+            hint = defaults.get('spectrum_local_path') or config["templates"].get("spectrum_local_path") or ""
+            if is_android():
+                path = _get_input("Spectrum templates path (absolute)", hint)
+                config["templates"]["spectrum_local_path"] = path if path else None
+                config["templates"]["use_smb"] = False
+            else:
+                path = input("Spectrum templates path (empty to clear): ").strip()
+                config["templates"]["spectrum_local_path"] = path if path else None
         elif choice == "12":
             config_theme()
         elif choice == "13":
@@ -678,6 +718,14 @@ def run_config_wizard():
         print(" Welcome to PeppyMeter Remote Client!")
         print("=" * 50)
         print()
+        if is_android():
+            defaults = android_default_template_paths()
+            print("Android (Pydroid) detected.")
+            print("Use absolute paths for templates, for example:")
+            print(f"  {defaults['local_path']}")
+            print(f"  {defaults['spectrum_local_path']}")
+            print("SMB mount is not available on Android.")
+            print()
         print("No profiles configured. Let's create one.")
         _pause()
 

@@ -57,6 +57,9 @@ from peppy_common import (
     _norm_str,
     _is_kiosk_random_mode,
     _resolve_pygame_ui_font,
+    is_android,
+    apply_android_profile_defaults,
+    android_default_template_paths,
     setup_logging,
     init_client_debug,
     log_client,
@@ -364,8 +367,37 @@ def _create_peppymeter(label=""):
     log_client(f"  font.light = {meter_config_volumio.get('font.light', '')}", "basic")
     log_client(f"  font.regular = {meter_config_volumio.get('font.regular', '')}", "basic")
     log_client(f"  font.bold = {meter_config_volumio.get('font.bold', '')}", "basic")
+    log_client(f"  font.italic = {meter_config_volumio.get('font.italic', '')}", "basic")
 
     return pm, meter_config_volumio
+
+
+def _pygame_display_flags(pg, is_windowed, is_fullscreen, double_buffer=False):
+    """Build pygame display flags. Android uses SCALED for phone/tablet letterboxing.
+
+    Android Pydroid display path adapted from community work by Lee.Yan.
+    """
+    flags = 0
+    if is_fullscreen:
+        flags |= pg.FULLSCREEN
+    elif not is_windowed:
+        flags |= pg.NOFRAME
+    if double_buffer:
+        flags |= pg.DOUBLEBUF
+    if is_android() and hasattr(pg, 'SCALED'):
+        flags |= pg.SCALED
+    return flags
+
+
+def _prepare_sdl_environment(android=None):
+    """Clear framebuffer SDL vars; set DISPLAY only on desktop."""
+    if android is None:
+        android = is_android()
+    for var in ('SDL_VIDEODRIVER', 'SDL_FBDEV', 'SDL_MOUSEDEV', 'SDL_MOUSEDRV', 'SDL_NOMOUSE'):
+        os.environ.pop(var, None)
+    if not android and 'DISPLAY' not in os.environ:
+        os.environ['DISPLAY'] = ':0'
+    return android
 
 
 def _wire_peppymeter(pm, meter_config_volumio, remote_ds, spectrum_factory=None):
@@ -410,13 +442,10 @@ def _attach_display(pm, meter_config_volumio, screen, screen_w, screen_h, depth,
 
     if (new_screen_w, new_screen_h) != (screen_w, screen_h):
         print(f"Display resizing: {screen_w}x{screen_h} -> {new_screen_w}x{new_screen_h}")
-        new_flags = 0
-        if is_fullscreen:
-            new_flags |= pg.FULLSCREEN
-        elif not is_windowed:
-            new_flags |= pg.NOFRAME
-        if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
-            new_flags |= pg.DOUBLEBUF
+        new_flags = _pygame_display_flags(
+            pg, is_windowed, is_fullscreen,
+            double_buffer=bool(pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]),
+        )
         screen = pg.display.set_mode((new_screen_w, new_screen_h), new_flags, new_depth)
         screen_w = new_screen_w
         screen_h = new_screen_h
@@ -534,12 +563,21 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     :param client_config: Client configuration dict (for spectrum settings, etc.)
     """
     client_config = client_config or {}
+    android = is_android()
     
     import ctypes
+    import pygame as pg
+
+    # Android / Pydroid: initialize pygame display first (Lee.Yan community bring-up).
+    _prepare_sdl_environment(android=android)
+    if android:
+        pg.display.init()
+        print("  Android detected: pygame display initialized early")
     
     # Set up paths - mirrors Volumio plugin structure
     screensaver_path = os.path.join(SCRIPT_DIR, "screensaver")
     peppymeter_path = os.path.join(screensaver_path, "peppymeter")
+    spectrum_path = os.path.join(screensaver_path, "spectrum")
     
     if not os.path.exists(peppymeter_path):
         print(f"ERROR: PeppyMeter not found at {peppymeter_path}")
@@ -552,25 +590,31 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         print("Run the installer to download Volumio custom handlers.")
         return False
     
-    spectrum_path = os.path.join(screensaver_path, "spectrum")
     if not os.path.exists(spectrum_path):
         print(f"ERROR: PeppySpectrum not found at {spectrum_path}")
         print("Run the installer to download PeppySpectrum.")
         return False
     
-    # Keep handlers + fonts byte-identical to the connected server (self-healing,
-    # integrity-checked). Must run BEFORE setup_format_icons so the local-icon patch
-    # is applied to any freshly synced handler files. No-op on older servers.
+    # Keep handlers + fonts byte-identical to the connected server (self-healing).
+    # Linux/Windows: full warning on failure. Android: try sync, soft-fail quietly
+    # (tablet testing decides if skip is needed later).
     sync_result = sync_handlers_from_server(screensaver_path, server_info['ip'],
                                             server_info.get('volumio_port', 3000))
     if sync_result and not sync_result.get('ok'):
         stale = sync_result.get('stale') or []
-        print("=" * 70)
-        print("WARNING: Remote is NOT running the server's handler code.")
-        print("Stale/missing: " + ", ".join(n for n in stale if n))
-        print("Features such as right-align, folder border and reel cdart may")
-        print("not match the server until this is resolved (check network/host).")
-        print("=" * 70)
+        if android:
+            log_client(
+                "Handler sync incomplete on Android; using local screensaver/ copy. "
+                "Stale/missing: " + ", ".join(n for n in stale if n),
+                "basic",
+            )
+        else:
+            print("=" * 70)
+            print("WARNING: Remote is NOT running the server's handler code.")
+            print("Stale/missing: " + ", ".join(n for n in stale if n))
+            print("Features such as right-align, folder border and reel cdart may")
+            print("not match the server until this is resolved (check network/host).")
+            print("=" * 70)
 
     # Setup format icons - copy bundled icons to screensaver/ where handlers expect them
     # This must happen BEFORE importing handlers as they check for icons at init time
@@ -586,43 +630,39 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         peppymeter_path, templates_path, config_fetcher, client_config=client_config
     )
     
-    # Set SDL environment for desktop BEFORE pygame import
-    # This prevents volumio_peppymeter's init_display from setting framebuffer mode
-    # Remove ALL framebuffer-related SDL variables
-    for var in ['SDL_FBDEV', 'SDL_MOUSEDEV', 'SDL_MOUSEDRV', 'SDL_NOMOUSE']:
-        os.environ.pop(var, None)
+    if android:
+        print("  SDL environment configured for Android (no X11 DISPLAY)")
+    else:
+        print(f"  SDL environment configured for desktop (DISPLAY={os.environ.get('DISPLAY')})")
     
-    # Remove SDL_VIDEODRIVER if it's set to framebuffer/headless modes OR empty string
-    sdl_driver = os.environ.get('SDL_VIDEODRIVER', None)
-    if sdl_driver is not None and (sdl_driver == '' or sdl_driver in ('dummy', 'fbcon', 'directfb')):
-        del os.environ['SDL_VIDEODRIVER']
-    
-    # Ensure DISPLAY is set for X11
-    if 'DISPLAY' not in os.environ:
-        os.environ['DISPLAY'] = ':0'
-    
-    print(f"  SDL environment configured for desktop (DISPLAY={os.environ.get('DISPLAY')})")
-    
-    # Add paths to Python path
-    # Order matters: screensaver first (volumio_*.py), then peppymeter, then spectrum
-    spectrum_path = os.path.join(screensaver_path, "spectrum")
-    if screensaver_path not in sys.path:
-        sys.path.insert(0, screensaver_path)
-    if peppymeter_path not in sys.path:
-        sys.path.insert(0, peppymeter_path)
-    if spectrum_path not in sys.path:
+    # Python path: keep desktop order; on Android force lib/ first so peppy_* is not
+    # shadowed (Lee.Yan / Pydroid). lib-first is also applied on desktop for safety.
+    for path in (spectrum_path, peppymeter_path, screensaver_path):
+        if path in sys.path:
+            sys.path.remove(path)
+    if android:
         sys.path.insert(0, spectrum_path)
+        sys.path.insert(0, peppymeter_path)
+        sys.path.insert(0, screensaver_path)
+    else:
+        sys.path.insert(0, screensaver_path)
+        sys.path.insert(0, peppymeter_path)
+        sys.path.insert(0, spectrum_path)
+    if _LIB_DIR in sys.path:
+        sys.path.remove(_LIB_DIR)
+    sys.path.insert(0, _LIB_DIR)
     
     # Change to peppymeter directory (volumio_peppymeter expects this)
     original_cwd = os.getcwd()
     os.chdir(peppymeter_path)
     
     try:
-        # Enable X11 threading
-        try:
-            ctypes.CDLL('libX11.so.6').XInitThreads()
-        except Exception:
-            pass  # Not on X11 or library not found
+        # Enable X11 threading (desktop only)
+        if not android:
+            try:
+                ctypes.CDLL('libX11.so.6').XInitThreads()
+            except Exception:
+                pass  # Not on X11 or library not found
         
         print("Loading PeppyMeter...")
         
@@ -724,23 +764,15 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         pm.util.meter_config[SCREEN_INFO][DEPTH] = depth
         print(f"Display: {screen_w}x{screen_h}")
         
-        memory_limit()
+        # memory_limit() can be problematic under Pydroid; skip on Android
+        if not android:
+            memory_limit()
         
         # Initialize display - CLIENT SPECIFIC (not using init_display from volumio_peppymeter)
-        # volumio_peppymeter.init_display() sets SDL_FBDEV which breaks X11 desktop display
-        # We initialize pygame directly for desktop use
-        import pygame as pg
-        
-        # Ensure clean SDL environment for X11/Wayland desktop
-        # These must be unset/correct BEFORE pg.display.init()
-        for var in ['SDL_FBDEV', 'SDL_MOUSEDEV', 'SDL_MOUSEDRV', 'SDL_NOMOUSE']:
-            os.environ.pop(var, None)
-        # Don't set SDL_VIDEODRIVER - let SDL auto-detect (x11, wayland)
-        os.environ.pop('SDL_VIDEODRIVER', None)
-        if 'DISPLAY' not in os.environ:
-            os.environ['DISPLAY'] = ':0'
-        
-        pg.display.init()
+        # pygame may already be initialized early on Android (Lee.Yan)
+        _prepare_sdl_environment(android=android)
+        if not android:
+            pg.display.init()
         pg.mouse.set_visible(False)
         pg.font.init()
         
@@ -750,17 +782,14 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         # Determine display flags from config (passed via environment)
         is_windowed = os.environ.get('PEPPY_DISPLAY_WINDOWED', '1') == '1'
         is_fullscreen = os.environ.get('PEPPY_DISPLAY_FULLSCREEN', '0') == '1'
+        if android:
+            is_windowed = False
+            is_fullscreen = True
         
-        flags = 0
-        if is_fullscreen:
-            flags |= pg.FULLSCREEN
-        elif not is_windowed:
-            # Frameless kiosk mode
-            flags |= pg.NOFRAME
-        # If windowed, no special flags (default window with title bar)
-        
-        if pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]:
-            flags |= pg.DOUBLEBUF
+        flags = _pygame_display_flags(
+            pg, is_windowed, is_fullscreen,
+            double_buffer=bool(pm.util.meter_config[SDL_ENV][DOUBLE_BUFFER]),
+        )
         
         screen = pg.display.set_mode((screen_w, screen_h), flags, depth)
         pm.util.meter_config[SCREEN_RECT] = pg.Rect(0, 0, screen_w, screen_h)
@@ -1056,14 +1085,7 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
 def run_test_display(level_receiver):
     """Simple pygame display for testing - shows VU bars."""
     
-    # Ensure SDL environment is set for desktop (in case we're falling back after failure)
-    os.environ.pop('SDL_FBDEV', None)
-    os.environ.pop('SDL_MOUSEDEV', None)
-    os.environ.pop('SDL_MOUSEDRV', None)
-    os.environ.pop('SDL_NOMOUSE', None)
-    os.environ.pop('SDL_VIDEODRIVER', None)  # Remove any driver setting
-    if 'DISPLAY' not in os.environ:
-        os.environ['DISPLAY'] = ':0'
+    android = _prepare_sdl_environment()
     
     try:
         import pygame
@@ -1074,11 +1096,12 @@ def run_test_display(level_receiver):
     # Quit pygame if it was partially initialized
     try:
         pygame.quit()
-    except:
+    except Exception:
         pass
     
     pygame.init()
-    screen = pygame.display.set_mode((800, 480))
+    test_flags = pygame.SCALED if (android and hasattr(pygame, 'SCALED')) else 0
+    screen = pygame.display.set_mode((800, 480), test_flags)
     pygame.display.set_caption("PeppyMeter Remote - Test Mode")
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 36)
@@ -1284,6 +1307,14 @@ def main():
     else:
         # Load config from file (active profile)
         config = load_config()
+
+    # Android: no SMB; require local absolute template paths (Pydroid)
+    if is_android():
+        apply_android_profile_defaults(config)
+        defaults = android_default_template_paths()
+        print("Android: using local templates (SMB disabled).")
+        print(f"  Meter templates:    {config['templates'].get('local_path') or defaults['local_path']}")
+        print(f"  Spectrum templates: {config['templates'].get('spectrum_local_path') or defaults['spectrum_local_path']}")
     
     # Command-line arguments override config file
     if args.server:
@@ -1392,8 +1423,10 @@ def main():
                     print("\nCancelled.")
                     sys.exit(0)
     
-    # SMB mount for templates (Linux only; Windows uses UNC paths)
+    # SMB mount for templates (Linux only; Windows uses UNC paths; never on Android)
     smb_mount = None
+    if is_android():
+        config["templates"]["use_smb"] = False
     if config["templates"]["use_smb"] and not config["templates"]["local_path"]:
         if os.name == 'nt':
             # Windows: use UNC paths, no mount

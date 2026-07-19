@@ -40,6 +40,12 @@ from peppy_asset import _unc_paths_for_windows
 
 def can_show_wizard_ui():
     """Return True if a graphical wizard can be shown (DISPLAY set and tkinter available)."""
+    try:
+        from peppy_common import is_android
+        if is_android():
+            return False  # Pydroid: use terminal --config
+    except Exception:
+        pass
     if os.name == 'nt':
         # Windows: assume GUI available
         pass

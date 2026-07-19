@@ -85,8 +85,68 @@ def _compare_remote_release_versions(client_ver, server_ver):
     return 0
 
 
+def is_android():
+    """Return True when running under Android (Pydroid 3, python-for-android, etc.)."""
+    if os.environ.get('ANDROID_ARGUMENT') is not None:
+        return True
+    if os.environ.get('ANDROID_ROOT') or os.environ.get('ANDROID_DATA'):
+        return True
+    if os.path.exists('/system/build.prop'):
+        return True
+    try:
+        if sys.platform.startswith('linux') and (
+            os.path.isdir('/data/data/ru.iiec.pydroid3')
+            or 'PYDROID' in os.environ
+            or os.environ.get('PREFIX', '').startswith('/data/data/com.termux')
+        ):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def android_default_download_dir():
+    """Preferred user-visible download root on Android storage."""
+    candidates = (
+        '/storage/emulated/0/Download',
+        '/sdcard/Download',
+        os.path.expanduser('~/storage/downloads'),
+        os.path.expanduser('~/Download'),
+    )
+    for path in candidates:
+        if path and os.path.isdir(path):
+            return path
+    return candidates[0]
+
+
+def android_default_template_paths():
+    """Absolute default meter / spectrum template paths for Android installs."""
+    download = android_default_download_dir()
+    return {
+        'local_path': os.path.join(download, 'templates'),
+        'spectrum_local_path': os.path.join(download, 'templates_spectrum'),
+    }
+
+
+def apply_android_profile_defaults(profile):
+    """Force Android-safe display/template defaults onto a profile dict in place."""
+    if not isinstance(profile, dict):
+        return profile
+    display = profile.setdefault('display', {})
+    display['windowed'] = False
+    display['fullscreen'] = True
+    templates = profile.setdefault('templates', {})
+    templates['use_smb'] = False
+    defaults = android_default_template_paths()
+    if not templates.get('local_path'):
+        templates['local_path'] = defaults['local_path']
+    if not templates.get('spectrum_local_path'):
+        templates['spectrum_local_path'] = defaults['spectrum_local_path']
+    return profile
+
+
 def _resolve_pygame_ui_font(pg, size):
-    """Return a pygame Font for UI text on Linux, Windows, and macOS.
+    """Return a pygame Font for UI text on Linux, Windows, macOS, and Android.
 
     Tries common system families (including Linux ``sans``), validates with a test
     render to avoid SDL ``NULL pointer`` failures, then ``SysFont(None)``, then
@@ -101,6 +161,8 @@ def _resolve_pygame_ui_font(pg, size):
 
     names = (
         'sans',
+        'Roboto',
+        'Noto Sans',
         'DejaVu Sans',
         'Liberation Sans',
         'Segoe UI',
@@ -317,8 +379,11 @@ def _deep_merge(base, overlay):
 
 
 def _new_profile():
-    """Return a deep copy of DEFAULT_PROFILE."""
-    return json.loads(json.dumps(DEFAULT_PROFILE))
+    """Return a deep copy of DEFAULT_PROFILE (Android-safe defaults when on Android)."""
+    profile = json.loads(json.dumps(DEFAULT_PROFILE))
+    if is_android():
+        apply_android_profile_defaults(profile)
+    return profile
 
 
 def _migrate_v1_to_v2(raw):
