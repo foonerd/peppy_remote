@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Get for Android — build peppy_remote_for_tablet.zip without requiring a desktop install.
+# Get for Android: build peppy_remote_for_tablet.zip without requiring a desktop install.
 # Sources: local install tree (validated) OR GitHub (staging). Fail closed on stale trees.
 set -euo pipefail
 
@@ -67,7 +67,7 @@ EXPECT_VERSION=""
 
 usage() {
   cat <<EOF
-Get for Android — create peppy_remote_for_tablet.zip
+Get for Android: create peppy_remote_for_tablet.zip
 
 Usage: $(basename "$0") [options]
 
@@ -128,8 +128,8 @@ parse_args() {
 
 choose_source_interactive() {
   echo ""
-  echo "Get for Android — where should files come from?"
-  echo "  1) GitHub (recommended — works with no desktop install)"
+  echo "Get for Android: where should files come from?"
+  echo "  1) GitHub (recommended: works with no desktop install)"
   echo "  2) Local install tree (must already be Android-capable)"
   echo ""
   read -r -p "Choose [1/2] (default 1): " ans
@@ -379,7 +379,7 @@ build_zip() {
   mkdir -p "$(dirname "$OUTPUT_ZIP")"
 
   local pack_root dest_tree ver work_base
-  # Prefer cache (or next to output) over /tmp — clearer for restricted environments
+  # Prefer cache (or next to output) over /tmp: clearer for restricted environments
   work_base="${XDG_CACHE_HOME:-$HOME/.cache}/peppy_android_work"
   mkdir -p "$work_base"
   pack_root="$(mktemp -d "$work_base/pack.XXXXXX" 2>/dev/null || mktemp -d "$(dirname "$OUTPUT_ZIP")/.peppy_android_pack.XXXXXX")"
@@ -437,7 +437,7 @@ main() {
 
   if [[ "$SOURCE" == "local" ]]; then
     [[ -n "$INSTALL_DIR" ]] || INSTALL_DIR="${HOME}/peppy_remote"
-    [[ -d "$INSTALL_DIR" ]] || die "Local install not found: $INSTALL_DIR — use --source github"
+    [[ -d "$INSTALL_DIR" ]] || die "Local install not found: $INSTALL_DIR: use --source github"
     tree="$INSTALL_DIR"
     source_label="local:$tree"
 
@@ -465,7 +465,7 @@ main() {
     tree="$(stage_from_github "$stage")"
     source_label="github:remote=$REMOTE_BRANCH;screensaver=$SCREENSAVER_BRANCH"
     info "Validating staged tree..."
-    validate_tree "$tree" || die "Staged GitHub tree failed validation — check branches"
+    validate_tree "$tree" || die "Staged GitHub tree failed validation: check branches"
   fi
 
   build_zip "$tree" "$source_label"

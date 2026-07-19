@@ -10,7 +10,7 @@ This client uses the **same rendering code** as the Volumio plugin (turntable, c
 
 ### Version compatibility and startup
 
-- **Authoritative check:** The client compares its release with the **PeppyMeter Screensaver** version returned by Volumio over **HTTP** (`getRemoteConfig`). UDP discovery may include a `plugin_version` field from broadcasts on your LAN, but it is **not** used for compatibility decisions—only a successful HTTP response from the server you selected counts.
+- **Authoritative check:** The client compares its release with the **PeppyMeter Screensaver** version returned by Volumio over **HTTP** (`getRemoteConfig`). UDP discovery may include a `plugin_version` field from broadcasts on your LAN, but it is **not** used for compatibility decisions - only a successful HTTP response from the server you selected counts.
 - **Wait for Volumio:** After you pick a server (discovery or `--server`), the client retries HTTP every few seconds for up to **120 seconds** by default (see `--server-wait-timeout`). While waiting, a pygame window may show "Waiting for server" (or console messages if pygame is unavailable).
 - **Semver match:** If the server plugin is too old, does not advertise a version, or the release does not match the client, a **blocking** message explains the problem; the client then exits. Use **`--skip-version-check`** only if you understand the risk (e.g. temporary testing).
 - **Server logs:** When the remote sends control messages with **`client_version`**, the plugin can log comparisons at **Verbose** debug (see PeppyMeter Screensaver debug settings).
@@ -39,7 +39,7 @@ Or set `PEPPY_REMOTE_DIR` before running (e.g. `PEPPY_REMOTE_DIR=/opt/peppy_remo
 
 ### Android (phone / tablet)
 
-**Primary path:** [Get for Android](android/INSTALL.md) — run `android/get-android.sh` / `get-android.ps1` on a PC to build `peppy_remote_for_tablet.zip` (GitHub or validated local source). No desktop remote required. Then unzip on the tablet and follow `START_HERE.txt`.
+**Primary path:** [Get for Android](android/INSTALL.md): run `android/get-android.sh` / `get-android.ps1` on a PC to build `peppy_remote_for_tablet.zip` (GitHub or validated local source). No desktop remote required. Then unzip on the tablet and follow `START_HERE.txt`.
 
 ## Testing from experimental branch
 
@@ -294,14 +294,14 @@ On first run the wizard opens automatically and goes straight to creating a new 
 The client supports multiple profiles, each with its own complete configuration (server, display, templates, spectrum, debug). This allows connecting to different Volumio servers or using different display setups from the same install.
 
 **Profile Manager (landing page):** When profiles exist, the wizard opens to a profile manager showing all profiles with the active profile marked. Actions available:
-- **New** — create a new profile (opens linear step wizard)
-- **Edit** — edit an existing profile (GUI: tabbed view; CLI: numbered menu)
-- **Set Active** — choose which profile starts by default
-- **Rename** — change a profile's friendly name
-- **Delete** — remove a profile (cannot delete the last one)
-- **Import** — load a profile from a JSON file (with collision handling)
-- **Export** — save a profile to a JSON file for backup or transfer
-- **Start** — launch the client with the selected profile
+- **New**: create a new profile (opens linear step wizard)
+- **Edit**: edit an existing profile (GUI: tabbed view; CLI: numbered menu)
+- **Set Active**: choose which profile starts by default
+- **Rename**: change a profile's friendly name
+- **Delete**: remove a profile (cannot delete the last one)
+- **Import**: load a profile from a JSON file (with collision handling)
+- **Export**: save a profile to a JSON file for backup or transfer
+- **Start**: launch the client with the selected profile
 
 **GUI Edit Mode:** When editing an existing profile, the GUI shows a **tabbed view** with 6 tabs (Server, Display, Templates, Theme, Spectrum, Debug) for direct access to any section. Save & Run and Save & Exit are always visible.
 
@@ -318,12 +318,12 @@ The client supports multiple profiles, each with its own complete configuration 
 If no `--profile` is given, the client starts with the active profile (last used).
 
 Each profile configures:
-- **Server** — auto-discover, enter hostname, or enter IP; after discovery choose "Use hostname" or "Use IP address"
-- **Display** — windowed, fullscreen
-- **Templates** — SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes
-- **Meter theme** — use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
-- **Spectrum** — decay rate
-- **Debug** — level and trace options (spectrum, network, config, wizard)
+- **Server**: auto-discover, enter hostname, or enter IP; after discovery choose "Use hostname" or "Use IP address"
+- **Display**: windowed, fullscreen
+- **Templates**: SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes
+- **Meter theme**: use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
+- **Spectrum**: decay rate
+- **Debug**: level and trace options (spectrum, network, config, wizard)
 
 Settings are saved to `~/peppy_remote/config.json` and persist between runs.
 
@@ -469,15 +469,15 @@ Command-line arguments override config file settings:
 ~/peppy_remote/peppy_remote --config --wizard-debug
 ```
 
-## Android (experimental) — Pydroid 3
+## Android (experimental): Pydroid 3
 
-### → [Get for Android — android/INSTALL.md](android/INSTALL.md)
+### → [Get for Android (android/INSTALL.md)](android/INSTALL.md)
 
 On a PC, run Get for Android to produce **`peppy_remote_for_tablet.zip`**, copy it to the tablet Download folder, unzip, and follow **`START_HERE.txt`**. Source can be **GitHub** (no prior desktop install) or a **validated** local tree (stale installs are refused).
 
 Tools: [`android/get-android.sh`](android/get-android.sh) · [`android/get-android.ps1`](android/get-android.ps1)
 
-**Summary:** same `peppy_remote.py` as desktop; tablet layout is `Download/peppy_remote/` + sibling `templates` / `templates_spectrum`; absolute paths in config; run from the Pydroid IDE. Pip: see [`requirements-android.txt`](requirements-android.txt) — no pygame / no cairosvg.
+**Summary:** same `peppy_remote.py` as desktop; tablet layout is `Download/peppy_remote/` + sibling `templates` / `templates_spectrum`; absolute paths in config; run from the Pydroid IDE. Pip: see [`requirements-android.txt`](requirements-android.txt): no pygame / no cairosvg.
 
 **Credits:** Pydroid bring-up and the initial working patch were contributed / proven by **Lee.Yan**.
 
@@ -505,7 +505,7 @@ Related: [android/START_HERE.md](android/START_HERE.md) · [android/COPY_CHECKLI
 ## How It Works
 
 1. **Discovery**: Client listens for UDP broadcasts from PeppyMeter server (port 5579)
-   - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server's current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility—see [Version compatibility and startup](#version-compatibility-and-startup)).
+   - Discovery packets include `config_version` (for config change detection), `active_meter` (protocol v3: server's current theme for random-meter sync), and may include **`plugin_version`** (informational only; not used for compatibility - see [Version compatibility and startup](#version-compatibility-and-startup)).
 2. **HTTP and version check**: Before starting the full client, the client waits for Volumio to answer HTTP **`getRemoteConfig`** on the chosen server and compares the plugin's advertised release with this client (unless **`--skip-version-check`**). Timeout and retry behavior are controlled by **`--server-wait-timeout`** (default 120 s). After the check passes, the client **syncs handler/font files from the server's manifest** - pulling only files whose `sha256` differs (integrity-checked, atomic; a no-op against older servers without the manifest) - so it always runs the same handler code as the server, regardless of which branch it was installed from.
 3. **Startup / syncing**: After the version check passes, the client shows a "Waiting for data from server" / "Please wait a moment." screen until the first UDP announcement is received (or a 10 s timeout). That ensures the client knows the server's current theme (including when the server uses random meter) before drawing.
 4. **Config**: Fetches `config.txt` from server via HTTP (Volumio plugin API)
@@ -601,7 +601,7 @@ On your Volumio box (requires [PeppyMeter Screensaver](https://github.com/fooner
 1. Go to **Settings > Plugins > PeppyMeter Screensaver > Settings**
 2. Under **Remote Display Settings**, enable **Enable Remote Server**
 3. Choose **Server Mode**:
-   - **Server Only**: Headless — no local display, only streams data. Use when the Volumio box has no display (e.g. dedicated server). Saves CPU and avoids spectrum pipe contention.
+   - **Server Only**: Headless: no local display, only streams data. Use when the Volumio box has no display (e.g. dedicated server). Saves CPU and avoids spectrum pipe contention.
    - **Server + Local**: Streams data AND shows visualization locally (default)
 4. Optionally adjust **Level Port** (5580), **Discovery Port** (5579), and **Config Sync Interval** (default 1 s). Config sync controls how quickly clients detect config/theme changes.
 5. Save settings
@@ -668,7 +668,7 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 **Theme restarts or flicker when server hasn't changed:**
 - The client only reloads when the **theme folder** or **theme name** would change. If you see "Config/folder+theme unchanged, continuing." in the log, the meter correctly did not restart. If restarts still happen, check that the server plugin is up to date (protocol v3 with `active_meter` in discovery).
 
-**Server Only mode — EADDRINUSE on restart:**
+**Server Only mode: EADDRINUSE on restart:**
 - In Server Only (headless) mode, the plugin closes UDP sockets and the spectrum pipe on shutdown so the next start can bind cleanly. If you see "Address already in use" after a restart, ensure the previous PeppyMeter process has fully exited (check `ps` for volumio_peppymeter or peppy processes).
 
 **Display issues ("windows not available"):**
@@ -680,20 +680,20 @@ Removes: install directory, Desktop and Start Menu shortcuts. Python and Git are
 - Install `python3-tk`: `sudo apt install python3-tk`
 - Ensure you have a display (not SSH without X forwarding). To force the text wizard: `~/peppy_remote/peppy_remote --config-text`
 
-**Windows – Dependencies not found after winget install:**
+**Windows - Dependencies not found after winget install:**
 - Close this PowerShell window, open a **new** PowerShell, then run the install script again so the updated PATH (Python/Git) is visible.
 - If winget is missing, install [App Installer](https://apps.microsoft.com/store/detail/app-installer/9NBLGGH4NNS1) from Microsoft Store (includes winget on Windows 11), or install Python and Git manually from [python.org](https://www.python.org/downloads/) and [git-scm.com](https://git-scm.com/download/win).
 
-**Windows – Execution policy / script won't run:**
+**Windows - Execution policy / script won't run:**
 - Run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 - Or download `install.ps1` and run: `powershell -ExecutionPolicy Bypass -File install.ps1`
 
-**Windows – Templates / meter skins not loading:**
+**Windows - Templates / meter skins not loading:**
 - On Windows the client uses **UNC paths** to the Volumio SMB share (no local mount). Ensure Volumio SMB is enabled and the share is reachable: in File Explorer try `\\volumio\Internal Storage` or `\\<volumio_ip>\Internal Storage`.
 - If UNC fails, use the config wizard and choose **local** templates; copy `Internal Storage\peppy_screensaver\templates` (and `templates_spectrum`) from the server to a folder on your PC and point the wizard to that folder.
 - Check Windows Firewall allows SMB (File and Printer Sharing) for the relevant network profile.
 
-**Windows – "No servers found":**
+**Windows - "No servers found":**
 - Ensure the Volumio machine and Windows PC are on the same network. Try: `ping volumio.local` or `ping <volumio_ip>`.
 - Run with a fixed server: `.\peppy_remote.cmd --server <volumio_ip_or_hostname>`.
 - Windows Firewall may block UDP discovery; allow the client (or Python) for Private networks if needed.

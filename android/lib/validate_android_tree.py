@@ -59,7 +59,7 @@ def validate_tree(root: str, expect_screensaver_version: Optional[str] = None) -
     common = os.path.join(lib_dir, "peppy_common.py")
     if not os.path.isfile(common):
         errors.append(
-            "Missing lib/peppy_common.py — this tree is not a modular remote client."
+            "Missing lib/peppy_common.py: this tree is not a modular remote client."
         )
         return errors
 
@@ -132,7 +132,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     errors = validate_tree(args.root, expect_screensaver_version=args.expect_version)
     if errors:
-        print("VALIDATION FAILED — will not pack this tree for Android:", file=sys.stderr)
+        print("VALIDATION FAILED: will not pack this tree for Android:", file=sys.stderr)
         for e in errors:
             print(f"  • {e}", file=sys.stderr)
         print(

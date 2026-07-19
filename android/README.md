@@ -2,7 +2,7 @@
 
 | Doc / tool | Purpose |
 |------------|---------|
-| **[INSTALL.md](INSTALL.md)** | **Get for Android** (primary) — zip on PC → tablet |
+| **[INSTALL.md](INSTALL.md)** | **Get for Android** (primary): zip on PC → tablet |
 | [get-android.sh](get-android.sh) / [get-android.ps1](get-android.ps1) | Build `peppy_remote_for_tablet.zip` |
 | [START_HERE.md](START_HERE.md) | Six steps on the tablet (also inside the zip) |
 | [lib/validate_android_tree.py](lib/validate_android_tree.py) | Fail-closed Android readiness checks |

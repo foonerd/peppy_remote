@@ -1,7 +1,7 @@
-# PeppyMeter Remote — Android (Pydroid 3) dependencies
+# PeppyMeter Remote: Android (Pydroid 3) dependencies
 #
 # Install in Pydroid 3 via Menu → Pip (Google authorization may be required).
-# pygame is pre-installed in Pydroid — do NOT pip install pygame.
+# pygame is pre-installed in Pydroid: do NOT pip install pygame.
 # Do NOT install cairosvg (breaks SVG handling on Pydroid; uninstall if present).
 #
 # Credit: Pydroid bring-up and dependency set proven by Lee.Yan.

@@ -1,4 +1,4 @@
-# Get for Android — build peppy_remote_for_tablet.zip without requiring a desktop install.
+# Get for Android: build peppy_remote_for_tablet.zip without requiring a desktop install.
 # Sources: local install tree (validated) OR GitHub (staging). Fail closed on stale trees.
 #
 # Examples:
@@ -369,8 +369,8 @@ if (-not $Source) {
         $Source = "github"
     } elseif ([Environment]::UserInteractive) {
         Write-Host ""
-        Write-Host "Get for Android — where should files come from?"
-        Write-Host "  1) GitHub (recommended — works with no desktop install)"
+        Write-Host "Get for Android: where should files come from?"
+        Write-Host "  1) GitHub (recommended: works with no desktop install)"
         Write-Host "  2) Local install tree (must already be Android-capable)"
         Write-Host ""
         $ans = Read-Host "Choose [1/2] (default 1)"
@@ -393,7 +393,7 @@ if ($Source -eq "local") {
     $profileDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
     if (-not $InstallDir) { $InstallDir = Join-Path $profileDir "peppy_remote" }
     if (-not (Test-Path $InstallDir)) {
-        Die "Local install not found: $InstallDir — use -Source github"
+        Die "Local install not found: $InstallDir: use -Source github"
     }
     $tree = $InstallDir
     $sourceLabel = "local:$tree"
@@ -432,7 +432,7 @@ if ($Source -eq "local") {
     try {
         Invoke-ValidateTree $tree
     } catch {
-        Die "Staged GitHub tree failed validation — check branches"
+        Die "Staged GitHub tree failed validation: check branches"
     }
 }
 

@@ -4,20 +4,20 @@ Build one tablet zip on a PC, copy it to the tablet, follow **START_HERE**.
 You do **not** need a desktop peppy_remote install first.
 
 This is **experimental**. Same `peppy_remote.py` as Linux/Windows (not a separate APK).  
-Pydroid bring-up was proven by **Lee.Yan** — thank you.
+Pydroid bring-up was proven by **Lee.Yan**.
 
 ---
 
 ## What you need
 
 1. Volumio with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver), **Remote Display Server** on, **same version** as the client (e.g. both **3.4.4**).
-2. Phone/tablet on the **same Wi‑Fi**.
-3. A Windows or Linux PC with **Git**, **Python 3**, and **zip** (Linux) — only to run Get for Android once.
+2. Phone/tablet on the **same Wi-Fi**.
+3. A Windows or Linux PC with **Git**, **Python 3**, and **zip** (Linux); only to run Get for Android once.
 4. Optional: USB keyboard for Pydroid Terminal.
 
 ---
 
-## Part A — On the PC: Get for Android
+## Part A: On the PC (Get for Android)
 
 ### Grandma path (recommended)
 
@@ -62,10 +62,10 @@ Created: …/Desktop/peppy_remote_for_tablet.zip
 | **Local** | You already have a validated Android-capable `~/peppy_remote` (or `%USERPROFILE%\peppy_remote`) |
 
 ```bash
-# Linux — GitHub (explicit)
+# Linux: GitHub (explicit)
 ./android/get-android.sh --source github
 
-# Linux — local (fails closed if not Android-ready)
+# Linux: local (fails closed if not Android-ready)
 ./android/get-android.sh --source local --install-dir "$HOME/peppy_remote"
 
 # Refresh handlers on a local tree, then pack
@@ -91,14 +91,14 @@ Stale / non-Android local trees are **refused** (no zip). Use GitHub source or u
 
 ---
 
-## Part B — On the tablet
+## Part B: On the tablet
 
 1. Copy `peppy_remote_for_tablet.zip` into the tablet **Download** folder.
 2. Unzip it. You should see `peppy_remote/`, `templates/`, `templates_spectrum/`.
 3. Open `peppy_remote/START_HERE.txt` and follow the six steps  
    (Play Store apps → Pip packages → skins if empty → `--config` → Run from Pydroid).
 
-Also in the zip: `ANDROID_PACK_INFO.txt` (what was packed — useful for support).
+Also in the zip: `ANDROID_PACK_INFO.txt` (pack provenance for support).
 
 ---
 
@@ -169,11 +169,11 @@ Prefer Get for Android so junk (`venv`, launchers) is never packed.
 
 | Problem | What to try |
 |---------|-------------|
-| Get for Android refuses local | Tree is stale — use `--source github` or upgrade remote |
+| Get for Android refuses local | Tree is stale: use `--source github` or upgrade remote |
 | `ModuleNotFoundError` | `lib/` and `screensaver/` must be inside `Download/peppy_remote/` |
 | Blank / no themes | Absolute template paths under Download |
 | cairo / cairosvg errors | Uninstall `cairosvg` in Pip |
-| No servers found | Same Wi‑Fi; Remote Display Server on; `--server` with IP |
+| No servers found | Same Wi-Fi; Remote Display Server on; `--server` with IP |
 | Version mismatch | Match plugin and client (e.g. both 3.4.4) |
 
 Tester checklist: [TABLET_VERIFY.md](TABLET_VERIFY.md).
