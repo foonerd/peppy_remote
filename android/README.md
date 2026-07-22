@@ -1,5 +1,7 @@
 # Android (Pydroid) docs
 
+**RISK / experimental.** Not production-ready; Linux/Windows remotes stay the supported path.
+
 | Doc / tool | Purpose |
 |------------|---------|
 | **[INSTALL.md](INSTALL.md)** | **Get for Android** (primary): zip on PC → tablet |

@@ -3,14 +3,14 @@
 #
 # Examples:
 #   .\android\get-android.ps1 -Yes
-#   .\android\get-android.ps1 -Source github -RemoteBranch feature/android-pydroid
+#   .\android\get-android.ps1 -Source github -RemoteBranch main
 #   .\android\get-android.ps1 -Source local -InstallDir "$env:USERPROFILE\peppy_remote"
 
 param(
     [ValidateSet("", "local", "github", "Local", "GitHub")]
     [string]$Source = "",
     [string]$InstallDir = "",
-    [string]$RemoteBranch = "feature/android-pydroid",
+    [string]$RemoteBranch = "main",
     [string]$ScreensaverBranch = "main",
     [string]$TemplatesPath = "",
     [string]$SpectrumTemplatesPath = "",

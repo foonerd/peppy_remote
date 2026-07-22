@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VALIDATE_PY="$SCRIPT_DIR/lib/validate_android_tree.py"
 
-DEFAULT_REMOTE_BRANCH="feature/android-pydroid"
+DEFAULT_REMOTE_BRANCH="main"
 DEFAULT_SCREENSAVER_BRANCH="main"
 REMOTE_RAW="https://raw.githubusercontent.com/foonerd/peppy_remote"
 SS_RAW="https://raw.githubusercontent.com/foonerd/peppy_screensaver"
@@ -89,7 +89,7 @@ Options:
 
 Examples:
   $(basename "$0") --yes
-  $(basename "$0") --source github --remote-branch feature/android-pydroid
+  $(basename "$0") --source github --remote-branch main
   $(basename "$0") --source local --install-dir "\$HOME/peppy_remote"
 EOF
 }

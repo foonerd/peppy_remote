@@ -3,7 +3,9 @@
 Build one tablet zip on a PC, copy it to the tablet, follow **START_HERE**.  
 You do **not** need a desktop peppy_remote install first.
 
-This is **experimental**. Same `peppy_remote.py` as Linux/Windows (not a separate APK).  
+> **RISK / experimental.** Android (Pydroid) support is early. Linux and Windows remotes are unchanged when you do not use this path. Expect rough edges: discovery, sync, display scaling, Pip packaging, and storage permissions. Community validation is still thin; report failures with device model, Android version, and `ANDROID_PACK_INFO.txt` from the zip.
+
+Same `peppy_remote.py` as Linux/Windows (not a separate APK).  
 Pydroid bring-up was proven by **Lee.Yan**.
 
 ---
@@ -32,10 +34,10 @@ chmod +x android/get-android.sh
 ./android/get-android.sh --yes
 ```
 
-Or one-shot after cloning the Android branch:
+Or one-shot after cloning `main` (or `experimental`):
 
 ```bash
-git clone --depth 1 -b feature/android-pydroid https://github.com/foonerd/peppy_remote.git
+git clone --depth 1 -b main https://github.com/foonerd/peppy_remote.git
 cd peppy_remote
 ./android/get-android.sh --yes
 ```
@@ -43,7 +45,7 @@ cd peppy_remote
 **Windows** (PowerShell):
 
 ```powershell
-git clone --depth 1 -b feature/android-pydroid https://github.com/foonerd/peppy_remote.git
+git clone --depth 1 -b main https://github.com/foonerd/peppy_remote.git
 cd peppy_remote
 powershell -ExecutionPolicy Bypass -File .\android\get-android.ps1 -Yes
 ```
@@ -123,23 +125,23 @@ Also in the zip: `ANDROID_PACK_INFO.txt` (pack provenance for support).
 A full Linux/Windows remote is **not required** for the tablet path.  
 If you want a PC remote as well:
 
-| Repo | Branch (Android testing) |
-|------|--------------------------|
-| peppy_remote | `feature/android-pydroid` |
+| Repo | Branch |
+|------|--------|
+| peppy_remote | `main` (or `experimental` for pre-release remotes) |
 | peppy_screensaver handlers | `main` (e.g. 3.4.4) |
 
 **Linux:**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.sh \
-  | bash -s -- --remote-branch feature/android-pydroid --screensaver-branch main
+curl -sSL https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.sh \
+  | bash -s -- --remote-branch main --screensaver-branch main
 ```
 
 **Windows:**
 
 ```powershell
-irm https://raw.githubusercontent.com/foonerd/peppy_remote/feature/android-pydroid/install.ps1 -OutFile install.ps1
-.\install.ps1 -RemoteBranch feature/android-pydroid -ScreensaverBranch main
+irm https://raw.githubusercontent.com/foonerd/peppy_remote/main/install.ps1 -OutFile install.ps1
+.\install.ps1 -RemoteBranch main -ScreensaverBranch main
 ```
 
 Then you may pack with `--source local` **only if** validation passes (`is_android` + modular `lib/` + screensaver engines).
@@ -148,14 +150,14 @@ Then you may pack with `--source local` **only if** validation passes (`is_andro
 
 ```bash
 ./android/get-android.sh --source github \
-  --remote-branch feature/android-pydroid \
+  --remote-branch main \
   --screensaver-branch main \
   --expect-version 3.4.4
 ```
 
 ```powershell
 .\android\get-android.ps1 -Source github `
-  -RemoteBranch feature/android-pydroid `
+  -RemoteBranch main `
   -ScreensaverBranch main `
   -ExpectVersion 3.4.4
 ```

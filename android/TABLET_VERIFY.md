@@ -1,11 +1,11 @@
 # Tablet verification (prototype)
 
-Run on the dedicated Pydroid tablet after copying a **feature/android-pydroid** build.
+Run on the dedicated Pydroid tablet after a **Get for Android** pack from `main` or `experimental`.
 
 ## Prep
 
-1. On PC: checkout `feature/android-pydroid`, ensure install has matching `screensaver/` (3.4.4).
-2. Copy per [COPY_CHECKLIST.md](COPY_CHECKLIST.md) and README Android section.
+1. On PC: run `android/get-android.sh --yes` or `android/get-android.ps1 -Yes` (or pack a validated local install).
+2. Unzip on the tablet per [INSTALL.md](INSTALL.md) / `START_HERE.txt`.
 3. Pip install `requirements-android.txt` (no pygame, no cairosvg).
 
 ## Checklist
