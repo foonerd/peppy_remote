@@ -92,10 +92,12 @@ def _edit_profile(config, profile_name):
         mode = "fullscreen" if config["display"]["fullscreen"] else ("windowed" if config["display"]["windowed"] else "frameless")
         pos = config["display"]["position"]
         pos_str = f"{pos[0]}, {pos[1]}" if pos else "centered"
+        gain_db = config["display"].get("meter_gain_db", 0)
         print("Display Settings:")
         print(f"  6. Window mode:       {mode}")
         print(f"  7. Position:          {pos_str}")
         print(f"  8. Monitor:           {config['display']['monitor']}")
+        print(f"  9. Meter gain (dB):   {gain_db} (-12..+12; negative = less deflection)")
         print()
 
         # Template settings
@@ -103,22 +105,22 @@ def _edit_profile(config, profile_name):
         local = config["templates"]["local_path"] or "(none)"
         spectrum_local = config["templates"].get("spectrum_local_path") or "(none)"
         print("Template Settings:")
-        print(f"  9. Use SMB mount:     {smb}")
-        print(f"  10. Local path:       {local}")
-        print(f"  11. Spectrum path:    {spectrum_local}")
+        print(f"  10. Use SMB mount:    {smb}")
+        print(f"  11. Local path:       {local}")
+        print(f"  12. Spectrum path:    {spectrum_local}")
         print()
 
         # Theme (kiosk / fixed meter)
         mf = config["display"].get("meter_folder") or "(server)"
         mm = config["display"].get("meter") or "(server)"
         print("Meter theme (kiosk):")
-        print(f"  12. Theme:            folder={mf}, meter={mm}")
+        print(f"  13. Theme:            folder={mf}, meter={mm}")
         print()
 
         # Spectrum settings
         decay = config.get("spectrum", {}).get("decay_rate", 0.95)
         print("Spectrum Settings:")
-        print(f"  13. Decay rate:       {decay} (0.85=fast, 0.98=slow)")
+        print(f"  14. Decay rate:       {decay} (0.85=fast, 0.98=slow)")
         print()
 
         # Debug settings
@@ -127,10 +129,10 @@ def _edit_profile(config, profile_name):
         trace_network = "yes" if config.get("debug", {}).get("trace_network", False) else "no"
         trace_wizard = "yes" if config.get("debug", {}).get("trace_wizard", False) else "no"
         print("Debug Settings:")
-        print(f"  14. Debug level:      {debug_level}")
-        print(f"  15. Trace spectrum:   {trace_spectrum}")
-        print(f"  16. Trace network:    {trace_network}")
-        print(f"  17. Trace wizard:     {trace_wizard}")
+        print(f"  15. Debug level:      {debug_level}")
+        print(f"  16. Trace spectrum:   {trace_spectrum}")
+        print(f"  17. Trace network:    {trace_network}")
+        print(f"  18. Trace wizard:     {trace_wizard}")
         print()
 
         # Path validation warnings
@@ -469,8 +471,19 @@ def _edit_profile(config, profile_name):
             except ValueError:
                 print("Invalid number")
         elif choice == "9":
-            config_smb()
+            current_gain = config["display"].get("meter_gain_db", 0)
+            try:
+                value = float(_get_input("Meter gain dB (-12..+12, 0=unity)", current_gain))
+                if value < -12.0:
+                    value = -12.0
+                elif value > 12.0:
+                    value = 12.0
+                config["display"]["meter_gain_db"] = value
+            except ValueError:
+                print("Invalid number")
         elif choice == "10":
+            config_smb()
+        elif choice == "11":
             defaults = android_default_template_paths() if is_android() else {}
             hint = defaults.get('local_path') or config["templates"].get("local_path") or ""
             if is_android():
@@ -480,7 +493,7 @@ def _edit_profile(config, profile_name):
             else:
                 path = input("Local templates path (empty to clear): ").strip()
                 config["templates"]["local_path"] = path if path else None
-        elif choice == "11":
+        elif choice == "12":
             defaults = android_default_template_paths() if is_android() else {}
             hint = defaults.get('spectrum_local_path') or config["templates"].get("spectrum_local_path") or ""
             if is_android():
@@ -490,17 +503,17 @@ def _edit_profile(config, profile_name):
             else:
                 path = input("Spectrum templates path (empty to clear): ").strip()
                 config["templates"]["spectrum_local_path"] = path if path else None
-        elif choice == "12":
-            config_theme()
         elif choice == "13":
-            config_decay_rate()
+            config_theme()
         elif choice == "14":
-            config_debug_level()
+            config_decay_rate()
         elif choice == "15":
-            config_trace_toggle("trace_spectrum", "Trace spectrum packets")
+            config_debug_level()
         elif choice == "16":
-            config_trace_toggle("trace_network", "Trace network connections")
+            config_trace_toggle("trace_spectrum", "Trace spectrum packets")
         elif choice == "17":
+            config_trace_toggle("trace_network", "Trace network connections")
+        elif choice == "18":
             config_trace_toggle("trace_wizard", "Trace wizard operations")
         elif choice == "B":
             return

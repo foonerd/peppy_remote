@@ -734,7 +734,18 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         
         # Replace data source with remote data source
         print("Connecting remote data source...")
-        remote_ds = RemoteDataSource(level_receiver)
+        try:
+            _gain_db = float(client_config.get("display", {}).get("meter_gain_db", 0) or 0)
+        except (TypeError, ValueError):
+            _gain_db = 0.0
+        # Clamp to same range as Volumio plugin meter sensitivity
+        if _gain_db < -12.0:
+            _gain_db = -12.0
+        elif _gain_db > 12.0:
+            _gain_db = 12.0
+        if _gain_db != 0.0:
+            log_client(f"Client meter gain: {_gain_db:+.1f} dB", "basic")
+        remote_ds = RemoteDataSource(level_receiver, gain_db=_gain_db)
         
         # Stop the original data source if it exists (prevents noise/pipe conflicts)
         original_ds = getattr(pm, 'data_source', None)

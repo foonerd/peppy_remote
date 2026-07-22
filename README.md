@@ -321,7 +321,7 @@ If no `--profile` is given, the client starts with the active profile (last used
 
 Each profile configures:
 - **Server**: auto-discover, enter hostname, or enter IP; after discovery choose "Use hostname" or "Use IP address"
-- **Display**: windowed, fullscreen
+- **Display**: windowed, fullscreen; optional **meter gain (dB)** (-12..+12) applied on this client only (negative reduces pinned meters)
 - **Templates**: SMB or local paths with optional Browse; **Mount now** on both Linux and Windows to connect and list server themes
 - **Meter theme**: use server theme (follow Volumio) or lock to a fixed theme (kiosk): choose template folder, then fixed (one meter), random from folder, or random from list
 - **Spectrum**: decay rate
@@ -380,7 +380,8 @@ Settings are stored in `~/peppy_remote/config.json` using a multi-profile format
         "fullscreen": false,
         "monitor": 0,
         "meter_folder": null,
-        "meter": null
+        "meter": null,
+        "meter_gain_db": 0
       },
       "templates": {
         "use_smb": true,
@@ -425,6 +426,7 @@ These options exist within each profile in the `profiles` dict:
 | display | monitor | 0 | Monitor index for fullscreen |
 | display | meter_folder | null | Kiosk: template folder (e.g. `1920x720_5skins`); null = use server theme |
 | display | meter | null | Kiosk: meter section name, `"random"`, or comma-separated list; null = use server theme |
+| display | meter_gain_db | 0 | Client-side level gain in dB (-12..+12). Negative reduces pinned meters; does not change Volumio audio. Independent of server Meter sensitivity. |
 | templates | use_smb | true | Templates from server (Linux: SMB mount; Windows: UNC paths). Use **Mount now** in the wizard to list server themes. |
 | templates | local_path | null | Local meter templates path |
 | templates | spectrum_local_path | null | Local spectrum templates path |

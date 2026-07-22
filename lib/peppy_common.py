@@ -322,6 +322,7 @@ DEFAULT_PROFILE = {
         "monitor": 0,
         "meter_folder": None,   # Kiosk: fixed template folder or None = use server
         "meter": None,          # Kiosk: "section", "random", or "sect1,sect2,..."; None = use server
+        "meter_gain_db": 0,     # Client-side level scale (-12..+12); negative tames pinned meters
     },
     "templates": {
         "use_smb": True,
