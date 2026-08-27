@@ -278,6 +278,21 @@ def _run_profile_editor(root, main_frame, store, result, profile_id=None):
                     variable=display_mode, value="windowed").pack(anchor=tk.W)
     ttk.Radiobutton(display_frame, text="Fullscreen",
                     variable=display_mode, value="fullscreen").pack(anchor=tk.W)
+    _wrap_label(display_frame,
+                text="Meter gain (dB): client-side level scale. Negative reduces pinned meters; "
+                     "positive boosts quiet material. Does not change Volumio audio.",
+                font=('', 9), foreground='#555').pack(anchor=tk.W, pady=(12, 2))
+    gain_row = ttk.Frame(display_frame)
+    gain_row.pack(anchor=tk.W, pady=2)
+    ttk.Label(gain_row, text="Meter gain (dB):").pack(side=tk.LEFT, padx=(0, 6))
+    try:
+        _gain_init = float(config["display"].get("meter_gain_db", 0) or 0)
+    except (TypeError, ValueError):
+        _gain_init = 0.0
+    gain_var = tk.StringVar(value=str(int(_gain_init) if float(_gain_init).is_integer() else _gain_init))
+    ttk.Spinbox(gain_row, textvariable=gain_var, from_=-12, to=12, width=6,
+                increment=1).pack(side=tk.LEFT)
+    ttk.Label(gain_row, text="(-12 .. +12)", font=('', 9), foreground='#555').pack(side=tk.LEFT, padx=(6, 0))
     steps.append(display_frame)
 
     # ================================================================
@@ -540,6 +555,16 @@ def _run_profile_editor(root, main_frame, store, result, profile_id=None):
     def apply_display():
         config["display"]["windowed"] = (display_mode.get() == "windowed")
         config["display"]["fullscreen"] = (display_mode.get() == "fullscreen")
+        try:
+            g = float(gain_var.get())
+        except (TypeError, ValueError):
+            g = 0.0
+        if g < -12.0:
+            g = -12.0
+        elif g > 12.0:
+            g = 12.0
+        config["display"]["meter_gain_db"] = g
+        gain_var.set(str(int(g) if float(g).is_integer() else g))
 
     def apply_templates():
         config["templates"]["use_smb"] = use_smb_var.get()

@@ -17,7 +17,7 @@ Config model v2 (multi-profile):
   load.
 """
 
-__version__ = "3.4.4"  # Footlocked to PeppyMeter Screensaver release
+__version__ = "3.4.5"  # Footlocked to PeppyMeter Screensaver release
 
 import json
 import logging
@@ -322,6 +322,7 @@ DEFAULT_PROFILE = {
         "monitor": 0,
         "meter_folder": None,   # Kiosk: fixed template folder or None = use server
         "meter": None,          # Kiosk: "section", "random", or "sect1,sect2,..."; None = use server
+        "meter_gain_db": 0,     # Client-side level scale (-12..+12); negative tames pinned meters
     },
     "templates": {
         "use_smb": True,

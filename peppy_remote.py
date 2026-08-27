@@ -389,6 +389,58 @@ def _pygame_display_flags(pg, is_windowed, is_fullscreen, double_buffer=False):
     return flags
 
 
+def _configure_engine_sys_path(screensaver_path, peppymeter_path, spectrum_path, lib_dir=None):
+    """Set sys.path for Volumio handlers + PeppyMeter/Spectrum engines.
+
+    Same order on Linux, Windows, and Android. insert(0) is applied in reverse
+    so the effective prefix is:
+
+      lib/, screensaver/, screensaver/peppymeter/, screensaver/spectrum/
+
+    screensaver/ must precede peppymeter/: volumio_peppymeter imports
+    ``from peppymeter.peppymeter import Peppymeter``, which needs the package
+    parent. If peppymeter/ is first, Python binds ``peppymeter`` to
+    peppymeter.py (a module) and package import fails.
+    """
+    if lib_dir is None:
+        lib_dir = _LIB_DIR
+    # Desired front-to-back order; insert(0) each so last listed ends up first.
+    ordered = (spectrum_path, peppymeter_path, screensaver_path, lib_dir)
+    for path in ordered:
+        if path in sys.path:
+            sys.path.remove(path)
+    for path in ordered:
+        sys.path.insert(0, path)
+    return [
+        p for p in sys.path
+        if p in (lib_dir, screensaver_path, peppymeter_path, spectrum_path)
+    ]
+
+
+def _ensure_peppymeter_package(screensaver_path, peppymeter_path):
+    """Fail fast if peppymeter resolved as a module instead of a package."""
+    try:
+        import peppymeter as _pm_pkg
+    except Exception as exc:
+        print("ERROR: Could not import peppymeter package:", exc)
+        print("  screensaver:", screensaver_path)
+        print("  peppymeter: ", peppymeter_path)
+        print("  sys.path (engine entries):")
+        for p in sys.path[:12]:
+            print("   ", p)
+        return False
+    if not hasattr(_pm_pkg, "__path__"):
+        print("ERROR: 'peppymeter' resolved as a module, not a package.")
+        print("  This usually means screensaver/peppymeter is ahead of screensaver/")
+        print("  on sys.path, so peppymeter.py shadows the peppymeter/ package.")
+        print("  module file:", getattr(_pm_pkg, "__file__", "?"))
+        print("  sys.path (engine entries):")
+        for p in sys.path[:12]:
+            print("   ", p)
+        return False
+    return True
+
+
 def _prepare_sdl_environment(android=None):
     """Clear framebuffer SDL vars; set DISPLAY only on desktop."""
     if android is None:
@@ -635,22 +687,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
     else:
         print(f"  SDL environment configured for desktop (DISPLAY={os.environ.get('DISPLAY')})")
     
-    # Python path: keep desktop order; on Android force lib/ first so peppy_* is not
-    # shadowed (Lee.Yan / Pydroid). lib-first is also applied on desktop for safety.
-    for path in (spectrum_path, peppymeter_path, screensaver_path):
-        if path in sys.path:
-            sys.path.remove(path)
-    if android:
-        sys.path.insert(0, spectrum_path)
-        sys.path.insert(0, peppymeter_path)
-        sys.path.insert(0, screensaver_path)
-    else:
-        sys.path.insert(0, screensaver_path)
-        sys.path.insert(0, peppymeter_path)
-        sys.path.insert(0, spectrum_path)
-    if _LIB_DIR in sys.path:
-        sys.path.remove(_LIB_DIR)
-    sys.path.insert(0, _LIB_DIR)
+    # One path order for Linux, Windows, and Android (lib before engines;
+    # screensaver before peppymeter so peppymeter/ is a package, not peppymeter.py).
+    _configure_engine_sys_path(screensaver_path, peppymeter_path, spectrum_path)
     
     # Change to peppymeter directory (volumio_peppymeter expects this)
     original_cwd = os.getcwd()
@@ -665,6 +704,9 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
                 pass  # Not on X11 or library not found
         
         print("Loading PeppyMeter...")
+
+        if not _ensure_peppymeter_package(screensaver_path, peppymeter_path):
+            return False
         
         # Import PeppyMeter components
         # Peppymeter, Volumio_ConfigFileParser, CallBack, init_debug_config are
@@ -734,7 +776,18 @@ def run_peppymeter_display(level_receiver, server_info, templates_path, config_f
         
         # Replace data source with remote data source
         print("Connecting remote data source...")
-        remote_ds = RemoteDataSource(level_receiver)
+        try:
+            _gain_db = float(client_config.get("display", {}).get("meter_gain_db", 0) or 0)
+        except (TypeError, ValueError):
+            _gain_db = 0.0
+        # Clamp to same range as Volumio plugin meter sensitivity
+        if _gain_db < -12.0:
+            _gain_db = -12.0
+        elif _gain_db > 12.0:
+            _gain_db = 12.0
+        if _gain_db != 0.0:
+            log_client(f"Client meter gain: {_gain_db:+.1f} dB", "basic")
+        remote_ds = RemoteDataSource(level_receiver, gain_db=_gain_db)
         
         # Stop the original data source if it exists (prevents noise/pipe conflicts)
         original_ds = getattr(pm, 'data_source', None)

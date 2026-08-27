@@ -366,32 +366,56 @@ class RemoteDataSource:
     """
     A DataSource implementation that gets data from the LevelReceiver.
     This mimics PeppyMeter's DataSource interface for seamless integration.
+
+    Optional client-side meter_gain_db (display.meter_gain_db) scales levels
+    after network receive. Negative dB reduces pinned/overpowered meters;
+    positive boosts quiet material. Does not affect server audio.
     """
-    
-    def __init__(self, level_receiver):
+
+    def __init__(self, level_receiver, gain_db=0.0):
         self.level_receiver = level_receiver
         self.volume = 100  # Used by some meters
         self.data = (0.0, 0.0, 0.0)  # (left, right, mono)
-    
+        try:
+            self.gain_db = float(gain_db)
+        except (TypeError, ValueError):
+            self.gain_db = 0.0
+        self.gain_mult = 10.0 ** (self.gain_db / 20.0)
+
     def start_data_source(self):
         """Start the data source (already running via LevelReceiver)."""
         pass
-    
+
     def stop_data_source(self):
         """Stop the data source."""
         pass
-    
+
+    def _scale(self, value):
+        if self.gain_mult == 1.0:
+            return value
+        try:
+            v = float(value) * self.gain_mult
+        except (TypeError, ValueError):
+            return 0.0
+        if v < 0.0:
+            return 0.0
+        if v > 100.0:
+            return 100.0
+        return v
+
     def get_current_data(self):
         """Return current data as tuple (left, right, mono)."""
-        return (self.level_receiver.left, 
-                self.level_receiver.right, 
-                self.level_receiver.mono)
-    
+        return (
+            self._scale(self.level_receiver.left),
+            self._scale(self.level_receiver.right),
+            self._scale(self.level_receiver.mono),
+        )
+
     def get_current_left_channel_data(self):
-        return self.level_receiver.left
-    
+        return self._scale(self.level_receiver.left)
+
     def get_current_right_channel_data(self):
-        return self.level_receiver.right
-    
+        return self._scale(self.level_receiver.right)
+
     def get_current_mono_channel_data(self):
-        return self.level_receiver.mono
+        return self._scale(self.level_receiver.mono)
