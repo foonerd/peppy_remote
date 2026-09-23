@@ -12,7 +12,7 @@ Pydroid bring-up was proven by **Lee.Yan**.
 
 ## What you need
 
-1. Volumio with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver), **Remote Display Server** on, **same version** as the client (e.g. both **3.4.5**).
+1. Volumio with [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver), **Remote Display Server** on, **same version** as the client (e.g. both **3.4.6**).
 2. Phone/tablet on the **same Wi-Fi**.
 3. A Windows or Linux PC with **Git**, **Python 3**, and **zip** (Linux); only to run Get for Android once.
 4. Optional: USB keyboard for Pydroid Terminal.
@@ -128,7 +128,7 @@ If you want a PC remote as well:
 | Repo | Branch |
 |------|--------|
 | peppy_remote | `main` (or `experimental` for pre-release remotes) |
-| peppy_screensaver handlers | `main` (e.g. 3.4.5) |
+| peppy_screensaver handlers | `main` (e.g. 3.4.6) |
 
 **Linux:**
 
@@ -152,14 +152,14 @@ Then you may pack with `--source local` **only if** validation passes (`is_andro
 ./android/get-android.sh --source github \
   --remote-branch main \
   --screensaver-branch main \
-  --expect-version 3.4.5
+  --expect-version 3.4.6
 ```
 
 ```powershell
 .\android\get-android.ps1 -Source github `
   -RemoteBranch main `
   -ScreensaverBranch main `
-  -ExpectVersion 3.4.5
+  -ExpectVersion 3.4.6
 ```
 
 ### Manual copy (no zip tool)
@@ -176,7 +176,7 @@ Prefer Get for Android so junk (`venv`, launchers) is never packed.
 | Blank / no themes | Absolute template paths under Download |
 | cairo / cairosvg errors | Uninstall `cairosvg` in Pip |
 | No servers found | Same Wi-Fi; Remote Display Server on; `--server` with IP |
-| Version mismatch | Match plugin and client (e.g. both 3.4.5) |
+| Version mismatch | Match plugin and client (e.g. both 3.4.6) |
 
 Tester checklist: [TABLET_VERIFY.md](TABLET_VERIFY.md).
 
