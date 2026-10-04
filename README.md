@@ -1,3 +1,9 @@
+> **This project is closed (October 2026) and this repository is archived.**
+>
+> The remote display client for PeppyMeter is succeeded by the remote displays of **[Glass](https://github.com/foonerd/glass)**: one program for Linux, Windows and Android that shows a player's theme on another screen. The Glass wiki's [Remotes](https://github.com/foonerd/glass/wiki/Remotes) page has how to install and run one. Releases and support continue in [Glass](https://github.com/foonerd/glass).
+>
+> Nothing here is updated any more. The repository stays readable for reference.
+
 # PeppyMeter Remote Client
 
 Remote display client for the [PeppyMeter Screensaver](https://github.com/foonerd/peppy_screensaver) Volumio plugin. Display PeppyMeter visualizations on any Debian-based system (or Windows) by connecting to a Volumio server running the plugin.
